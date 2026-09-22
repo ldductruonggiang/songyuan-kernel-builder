@@ -234,10 +234,13 @@ jobs:
             scripts/config --disable CONFIG_ARM64_4K_PAGES
             scripts/config --disable CONFIG_ARM64_64K_PAGES
           fi
-          # Disable KMI Symbol Trimming so vendor modules load freely and abi_symbollist.raw is not required
+          # Disable KMI Symbol Trimming & Protected Modules List so modpost passes smoothly
           scripts/config --disable CONFIG_TRIM_UNUSED_KSYMS
           scripts/config --set-str CONFIG_UNUSED_KSYMS_WHITELIST ""
           touch abi_symbollist.raw
+          scripts/config --disable CONFIG_MODULE_SIG_PROTECT
+          scripts/config --set-str CONFIG_MODULE_SIG_PROTECT_LIST ""
+          touch protected_module_names_list
 
           echo "Refreshing config non-interactively with make olddefconfig..."
           yes "" | make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
