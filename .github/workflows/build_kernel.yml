@@ -1,0 +1,242 @@
+name: Build SukiSU Ultra Built-in Kernel (Redmi K100 Pro Max)
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel_repo:
+        description: "Android Kernel Source Repository"
+        required: true
+        default: "https://android.googlesource.com/kernel/common"
+      kernel_branch:
+        description: "Kernel Branch (Matches songyuan KMI: android16-6.12)"
+        required: true
+        default: "android16-6.12"
+      susfs_branch:
+        description: "SUSFS Branch"
+        required: true
+        type: choice
+        options:
+          - "susfs-main"
+          - "susfs-test"
+          - "none"
+        default: "susfs-main"
+      hook_method:
+        description: "Hook Method"
+        required: true
+        type: choice
+        options:
+          - "kprobes"
+          - "tracepoint"
+          - "manual"
+        default: "kprobes"
+      enable_kpm:
+        description: "Enable KPM (CONFIG_KPM=y)"
+        required: true
+        type: boolean
+        default: true
+      page_size:
+        description: "Kernel Page Size"
+        required: true
+        type: choice
+        options:
+          - "4k"
+          - "16k"
+        default: "4k"
+
+jobs:
+  build-kernel:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Maximize Build Disk Space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 8192
+          temp-reserve-mb: 4096
+          remove-dotnet: "true"
+          remove-android: "true"
+          remove-haskell: "true"
+          remove-codeql: "true"
+          remove-docker-images: "true"
+
+      - name: Checkout Builder Repository
+        uses: actions/checkout@v4
+
+      - name: Install Host Dependencies & Toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            git ccache automake flex lzop bison gperf build-essential \
+            zip curl zlib1g-dev libncurses-dev libssl-dev libelf-dev \
+            clang-18 lld-18 llvm-18 python3 bc libxml2-utils \
+            tar wget libarchive-tools
+          
+          # Create clang symlinks
+          sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
+          sudo ln -sf /usr/bin/clang++-18 /usr/bin/clang++
+          sudo ln -sf /usr/bin/ld.lld-18 /usr/bin/ld.lld
+          sudo ln -sf /usr/bin/llvm-ar-18 /usr/bin/llvm-ar
+          sudo ln -sf /usr/bin/llvm-nm-18 /usr/bin/llvm-nm
+          sudo ln -sf /usr/bin/llvm-objcopy-18 /usr/bin/llvm-objcopy
+          sudo ln -sf /usr/bin/llvm-objdump-18 /usr/bin/llvm-objdump
+          sudo ln -sf /usr/bin/llvm-readelf-18 /usr/bin/llvm-readelf
+          sudo ln -sf /usr/bin/llvm-strip-18 /usr/bin/llvm-strip
+
+          clang --version
+          ld.lld --version
+
+      - name: Clone Kernel Source Tree (${{ inputs.kernel_branch }})
+        run: |
+          echo "Cloning ${{ inputs.kernel_repo }} branch ${{ inputs.kernel_branch }}..."
+          git clone --depth=1 --branch ${{ inputs.kernel_branch }} ${{ inputs.kernel_repo }} kernel_workspace
+          cd kernel_workspace
+          echo "KERNEL_HEAD=$(git rev-parse HEAD)" >> $GITHUB_ENV
+
+      - name: Integrate SukiSU Ultra BUILT-IN
+        run: |
+          cd kernel_workspace
+          echo "=== Integrating SukiSU Ultra Built-in ==="
+          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s builtin
+          
+          if [ -d "KernelSU" ]; then
+            echo "SUKISU_COMMIT=$(git -C KernelSU rev-parse HEAD)" >> $GITHUB_ENV
+          else
+            echo "KernelSU directory not found!"
+            exit 1
+          fi
+
+      - name: Integrate SUSFS Subsystem
+        if: ${{ inputs.susfs_branch != 'none' }}
+        run: |
+          cd kernel_workspace
+          echo "=== Integrating SUSFS (${{ inputs.susfs_branch }}) ==="
+          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s ${{ inputs.susfs_branch }} || {
+            echo "Branch ${{ inputs.susfs_branch }} failed, falling back to susfs-main..."
+            curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-main
+          }
+
+      - name: Configure Kernel Symbols (.config)
+        run: |
+          cd kernel_workspace
+          export ARCH=arm64
+          export CC=clang
+          export LD=ld.lld
+          
+          echo "Generating base gki_defconfig..."
+          if [ -f "arch/arm64/configs/gki_defconfig" ]; then
+            make ARCH=arm64 CC=clang LD=ld.lld gki_defconfig
+          else
+            make ARCH=arm64 CC=clang LD=ld.lld defconfig
+          fi
+
+          echo "Applying SukiSU Core Config..."
+          scripts/config --enable CONFIG_KSU
+
+          # Hook method
+          if [ "${{ inputs.hook_method }}" = "manual" ]; then
+            scripts/config --enable CONFIG_KSU_MANUAL_HOOK
+            scripts/config --disable CONFIG_KPROBES
+          elif [ "${{ inputs.hook_method }}" = "tracepoint" ]; then
+            scripts/config --enable CONFIG_TRACEPOINTS
+            scripts/config --disable CONFIG_KSU_MANUAL_HOOK
+          else
+            scripts/config --enable CONFIG_KPROBES
+            scripts/config --enable CONFIG_HAVE_KPROBES
+            scripts/config --enable CONFIG_KPROBE_EVENTS
+            scripts/config --disable CONFIG_KSU_MANUAL_HOOK
+          fi
+
+          # KPM enforcement
+          if [ "${{ inputs.enable_kpm }}" = "true" ]; then
+            scripts/config --enable CONFIG_KPM
+          fi
+
+          # Page Size (Redmi K100 Pro Max uses 4K Page Size)
+          if [ "${{ inputs.page_size }}" = "4k" ]; then
+            scripts/config --enable CONFIG_ARM64_4K_PAGES
+            scripts/config --disable CONFIG_ARM64_16K_PAGES
+            scripts/config --disable CONFIG_ARM64_64K_PAGES
+          else
+            scripts/config --enable CONFIG_ARM64_16K_PAGES
+            scripts/config --disable CONFIG_ARM64_4K_PAGES
+          fi
+
+          echo "Refreshing config with make olddefconfig..."
+          make ARCH=arm64 CC=clang LD=ld.lld olddefconfig
+
+          # Strict Verification
+          echo "--- Configuration Audit ---"
+          grep -E "(CONFIG_KSU|CONFIG_KPM|CONFIG_KPROBES|CONFIG_ARM64_4K_PAGES)" .config || true
+
+          if ! grep -q "^CONFIG_KSU=y" .config; then
+            echo "CRITICAL: CONFIG_KSU=y is missing!"
+            exit 1
+          fi
+
+          if [ "${{ inputs.enable_kpm }}" = "true" ] && ! grep -q "^CONFIG_KPM=y" .config; then
+            echo "CRITICAL: CONFIG_KPM=y is missing!"
+            exit 1
+          fi
+
+      - name: Build Kernel Image
+        run: |
+          cd kernel_workspace
+          NPROC=$(nproc)
+          echo "Building kernel with $NPROC threads..."
+          make -j"$NPROC" \
+            ARCH=arm64 \
+            CC=clang \
+            LD=ld.lld \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            LLVM=1 \
+            Image
+
+          if [ ! -f "arch/arm64/boot/Image" ]; then
+            echo "Build failed: arch/arm64/boot/Image not found!"
+            exit 1
+          fi
+          echo "Kernel compiled successfully."
+
+      - name: Package Artifacts & Boot Header v4
+        run: |
+          mkdir -p out_artifacts
+          cp kernel_workspace/arch/arm64/boot/Image out_artifacts/Image
+          cp kernel_workspace/.config out_artifacts/build.config
+
+          # Install mkbootimg
+          pip3 install --break-system-packages git+https://android.googlesource.com/platform/system/tools/mkbootimg.git || true
+
+          # Create Boot Header v4 image
+          if command -v mkbootimg &>/dev/null; then
+            mkbootimg \
+              --header_version 4 \
+              --kernel out_artifacts/Image \
+              --pagesize 4096 \
+              --output out_artifacts/boot-sukisu-ultra-songyuan-4k.img
+          else
+            python3 -c "
+          import struct, hashlib
+          kernel = open('out_artifacts/Image', 'rb').read()
+          header = bytearray(4096)
+          header[0:8] = b'ANDROID!'
+          struct.pack_into('<I', header, 8, len(kernel))
+          struct.pack_into('<I', header, 12, 0) # ramdisk_size = 0 in boot v4
+          struct.pack_into('<I', header, 16, (16 << 25)) # Android 16
+          struct.pack_into('<I', header, 20, 4096) # header_size
+          struct.pack_into('<I', header, 40, 4) # header_version = 4
+          padded_len = ((len(kernel) + 4095) // 4096) * 4096
+          padded_kernel = kernel + b'\x00' * (padded_len - len(kernel))
+          open('out_artifacts/boot-sukisu-ultra-songyuan-4k.img', 'wb').write(header + padded_kernel)
+          "
+          fi
+
+          # Generate SHA256 checksums
+          cd out_artifacts
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Upload Kernel Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SukiSU-Ultra-Kernel-songyuan-android16-6.12
+          path: out_artifacts/
+          if-no-files-found: error

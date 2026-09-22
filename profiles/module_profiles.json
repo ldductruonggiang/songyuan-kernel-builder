@@ -1,0 +1,122 @@
+{
+  "profiles": [
+    {
+      "id": "play_integrity_hyperos3",
+      "name": "Play Integrity Bypass (HyperOS 3 / Android 16)",
+      "description": "Recommended profile for bypassing Google Play Integrity on Android 16 with HyperOS 3.",
+      "recommended_status": {
+        "basic_integrity": "PASS (with SUSFS + Tricky Store)",
+        "device_integrity": "PASS (with Leaf Hack CA3 certificate)",
+        "strong_integrity": "REQUIRES UNREVOKED PRIVATE KEYBOX"
+      },
+      "modules": [
+        {
+          "name": "Tricky Store",
+          "action": "ENABLE",
+          "mode": "Leaf Hack (Keybox with Google Droid CA3 leaf)",
+          "targets": [
+            "com.google.android.gms",
+            "com.google.android.gsf",
+            "com.android.vending",
+            "gr.nikolasspyr.integritycheck"
+          ],
+          "note": "Provides Device Integrity without modifying GMS memory directly."
+        },
+        {
+          "name": "SUSFS Kernel Module / Daemon",
+          "action": "ENABLE",
+          "note": "Required to hide unlocked bootloader (/proc/bootconfig) and su mount traces from DroidGuard native checks."
+        },
+        {
+          "name": "ReZygisk",
+          "action": "ENABLE",
+          "note": "Modern Zygisk implementation for Android 16."
+        },
+        {
+          "name": "Zygisk NoHello",
+          "action": "ENABLE",
+          "note": "Hides Zygisk presence and socket IPC from detection tools."
+        },
+        {
+          "name": "Play Integrity Fix (PIF)",
+          "action": "DISABLE",
+          "note": "MANDATORY: Must be disabled on Android 16 / HyperOS 3. Injects arm64-v8a.so into GMS unstable which triggers direct crash and causes Basic Integrity to FAIL."
+        },
+        {
+          "name": "Treat Wheel",
+          "action": "DISABLE",
+          "note": "Conficts with modern Zygisk hooks on Android 16."
+        }
+      ],
+      "technical_notes": [
+        "BASIC=FAIL occurs when PIF or conflicting Zygisk modules inject libraries into com.google.android.gms.unstable.",
+        "DroidGuard on Android 16 directly opens /proc/bootconfig to read 'androidboot.verifiedbootstate=orange'. Built-in SUSFS is required to intercept and hide this.",
+        "STRONG Integrity check uses hardware-backed attestation verified against Google Cloud CRL. Public keybox certificates are revoked. A private unrevoked keybox is mandatory for Strong."
+      ]
+    },
+    {
+      "id": "stealth_banking",
+      "name": "Maximum Stealth (Banking & Enterprise)",
+      "description": "Hardened configuration targeting strict banking apps, Knox/TEE detectors, and enterprise MDM.",
+      "recommended_status": {
+        "root_detection": "UNDETECTABLE",
+        "mount_namespace": "ISOLATED",
+        "kpm_status": "ACTIVE"
+      },
+      "modules": [
+        {
+          "name": "SukiSU Ultra Built-in",
+          "action": "ENABLE",
+          "note": "Kernel-level root without userspace daemon daemonization traces."
+        },
+        {
+          "name": "SUSFS Full Spoofing",
+          "action": "ENABLE",
+          "note": "Hides mountinfo, kstat, openat probes for su, /data/adb, and busybox."
+        },
+        {
+          "name": "KPM (Kernel Patch Module)",
+          "action": "ENABLE",
+          "note": "Allows in-kernel security hotpatching without altering base image."
+        },
+        {
+          "name": "Zygisk NoHello",
+          "action": "ENABLE",
+          "note": "Hides ART method hooks."
+        }
+      ],
+      "technical_notes": [
+        "Do not enable excessive Xposed or Frida modules on banking profiles as they inject noticeable ptrace or memory maps."
+      ]
+    },
+    {
+      "id": "gaming_performance",
+      "name": "High Performance & Gaming",
+      "description": "Minimal hook overhead for Snapdragon 8 Elite high frame-rate stability.",
+      "recommended_status": {
+        "hook_overhead": "MINIMAL (<0.1%)",
+        "thermal_throttling": "STOCK_BEHAVIOR"
+      },
+      "modules": [
+        {
+          "name": "SukiSU Ultra Built-in (Tracepoint Hook)",
+          "action": "ENABLE",
+          "note": "Tracepoint hooks eliminate kprobe breakpoint trap overhead in system call path."
+        },
+        {
+          "name": "SUSFS",
+          "action": "ENABLE",
+          "note": "Preserves anti-cheat compliance for games checking root."
+        },
+        {
+          "name": "Logging & Auditing",
+          "action": "DISABLE",
+          "note": "Disable logcat flooding and dmesg tracing."
+        }
+      ],
+      "technical_notes": [
+        "Redmi K100 Pro Max Snapdragon 8 Elite Gen 5 features 4.32GHz Oryon cores; tracepoint hooks avoid CPU cache invalidation."
+      ]
+    }
+  ]
+}
