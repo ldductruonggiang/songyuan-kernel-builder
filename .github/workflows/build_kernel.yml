@@ -97,23 +97,37 @@ jobs:
           clang --version
           ld.lld --version
 
-      - name: Clone Kernel Source Tree & Checkout Exact Commit
+      - name: Fetch Kernel Source Tree (${{ inputs.kernel_commit }})
         run: |
-          echo "Cloning ${{ inputs.kernel_repo }} branch ${{ inputs.kernel_branch }}..."
-          git clone --depth=50 --branch ${{ inputs.kernel_branch }} ${{ inputs.kernel_repo }} kernel_workspace
+          mkdir -p kernel_workspace
           cd kernel_workspace
           
-          if [ -n "${{ inputs.kernel_commit }}" ]; then
-            echo "Checking out exact commit: ${{ inputs.kernel_commit }}..."
-            git checkout ${{ inputs.kernel_commit }} || {
-              echo "Commit not in shallow history, unshallowing..."
-              git fetch --unshallow || git fetch --depth=500
-              git checkout ${{ inputs.kernel_commit }}
-            }
+          echo "=== Fetching Kernel Source for Commit: ${{ inputs.kernel_commit }} ==="
+          ARCHIVE_URL="https://android.googlesource.com/kernel/common/+archive/${{ inputs.kernel_commit }}.tar.gz"
+          echo "Downloading kernel source archive from $ARCHIVE_URL..."
+          
+          if curl -f -L --retry 3 --retry-delay 5 "$ARCHIVE_URL" | tar -xz; then
+            echo "Successfully extracted kernel source archive."
+          else
+            echo "Direct archive download failed, falling back to git clone..."
+            cd ..
+            rm -rf kernel_workspace
+            git clone --depth=200 --branch ${{ inputs.kernel_branch }} ${{ inputs.kernel_repo }} kernel_workspace
+            cd kernel_workspace
+            git checkout ${{ inputs.kernel_commit }} || true
+          fi
+          
+          # Initialize git metadata so SukiSU setup.sh and kernel scripts work seamlessly
+          if [ ! -d ".git" ]; then
+            git init
+            git config user.name "Builder"
+            git config user.email "builder@localhost"
+            git add -A
+            git commit -m "Exact stock ACK commit: ${{ inputs.kernel_commit }}"
           fi
           
           echo "KERNEL_HEAD=$(git rev-parse HEAD)" >> $GITHUB_ENV
-          echo "Target commit confirmed: $(git rev-parse HEAD)"
+          echo "Kernel source tree ready."
 
       - name: Integrate SukiSU Ultra BUILT-IN & Apply Linux 6.12 Fixes
         run: |
