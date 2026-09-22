@@ -93,7 +93,7 @@ jobs:
           cd kernel_workspace
           echo "KERNEL_HEAD=$(git rev-parse HEAD)" >> $GITHUB_ENV
 
-      - name: Integrate SukiSU Ultra BUILT-IN
+      - name: Integrate SukiSU Ultra BUILT-IN & Apply Linux 6.12 Fixes
         run: |
           cd kernel_workspace
           echo "=== Integrating SukiSU Ultra Built-in ==="
@@ -106,6 +106,25 @@ jobs:
             echo "KernelSU directory not found!"
             exit 1
           fi
+
+          echo "=== Patching Linux 6.12 Compatibility for KPM (super_access.c) ==="
+          python3 -c "
+          import glob, re
+          patched_any = False
+          for f in glob.glob('**/super_access.c', recursive=True):
+              content = open(f, 'r').read()
+              new_content = re.sub(
+                  r'DEFINE_MEMBER\(netlink_kernel_cfg,\s*cb_mutex\)',
+                  '#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)\nDEFINE_MEMBER(netlink_kernel_cfg, cb_mutex)\n#endif',
+                  content
+              )
+              if new_content != content:
+                  open(f, 'w').write(new_content)
+                  print(f'Successfully patched {f} for Linux 6.12 netlink_kernel_cfg compatibility.')
+                  patched_any = True
+          if not patched_any:
+              print('Notice: super_access.c pattern already satisfied or not found.')
+          "
 
       - name: Integrate SUSFS Subsystem
         if: ${{ inputs.susfs_branch != 'none' }}
@@ -132,7 +151,7 @@ jobs:
             make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- defconfig
           fi
 
-          echo "Applying SukiSU Core Config..."
+          echo "Applying SukiSU Core & BShield Bypass Config..."
           scripts/config --enable CONFIG_KSU
 
           # Hook method
@@ -154,6 +173,17 @@ jobs:
             scripts/config --enable CONFIG_KPM
           fi
 
+          # SUSFS Deep Stealth (Fix BShield Error 5, 6, 12: Mounts, Maps, Bootconfig)
+          scripts/config --enable CONFIG_KSU_SUSFS
+          scripts/config --enable CONFIG_KSU_SUSFS_SUS_PATH
+          scripts/config --enable CONFIG_KSU_SUSFS_SUS_MOUNT
+          scripts/config --enable CONFIG_KSU_SUSFS_SUS_KSTAT
+          scripts/config --enable CONFIG_KSU_SUSFS_SPOOF_UNAME
+          scripts/config --enable CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+          scripts/config --enable CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+          scripts/config --enable CONFIG_KSU_SUSFS_OPEN_REDIRECT
+          scripts/config --enable CONFIG_KSU_SUSFS_SUS_MAP
+
           # Page Size (Redmi K100 Pro Max uses 4K Page Size)
           if [ "${{ inputs.page_size }}" = "4k" ]; then
             scripts/config --enable CONFIG_ARM64_4K_PAGES
@@ -170,7 +200,7 @@ jobs:
 
           # Strict Verification
           echo "--- Configuration Audit ---"
-          grep -E "(CONFIG_KSU|CONFIG_KPM|CONFIG_KPROBES|CONFIG_ARM64_4K_PAGES)" .config || true
+          grep -E "(CONFIG_KSU|CONFIG_KPM|CONFIG_KPROBES|CONFIG_KSU_SUSFS|CONFIG_ARM64_4K_PAGES)" .config || true
 
           if ! grep -q "^CONFIG_KSU=y" .config; then
             echo "CRITICAL: CONFIG_KSU=y is missing!"
