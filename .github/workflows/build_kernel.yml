@@ -51,19 +51,21 @@ jobs:
   build-kernel:
     runs-on: ubuntu-24.04
     steps:
-      - name: Maximize Build Disk Space
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 8192
-          temp-reserve-mb: 4096
-          remove-dotnet: "true"
-          remove-android: "true"
-          remove-haskell: "true"
-          remove-codeql: "true"
-          remove-docker-images: "true"
+      - name: Free Disk Space (Fast)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc || true
+          df -h
 
       - name: Checkout Builder Repository
         uses: actions/checkout@v4
+
+      - name: Setup ccache Storage
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-kernel-ccache-${{ hashFiles('configs/stock_songyuan_6.12.config') }}
+          restore-keys: |
+            ${{ runner.os }}-kernel-ccache-
 
       - name: Install Host Dependencies & Clang Toolchain
         run: |
@@ -252,10 +254,15 @@ jobs:
       - name: Build Kernel Image
         run: |
           cd kernel_workspace
-          NPROC=$(nproc)
-          echo "Building kernel with $NPROC threads..."
-          make -j"$NPROC" \
+          export CCACHE_DIR="$HOME/.cache/ccache"
+          export CCACHE_MAXSIZE="5G"
+          ccache -s || true
+
+          NTHREADS=$(( $(nproc) * 2 ))
+          echo "Building kernel with $NTHREADS parallel threads and ccache acceleration..."
+          make -j"$NTHREADS" \
             ARCH=arm64 \
+            CC="ccache clang" \
             LLVM=1 \
             LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -266,6 +273,7 @@ jobs:
             exit 1
           fi
           echo "Kernel compiled successfully. Size: $(stat -c%s arch/arm64/boot/Image) bytes."
+          ccache -s || true
 
       - name: Package Boot Image with AVB Hash Footer (Header v4, 96MB)
         run: |
