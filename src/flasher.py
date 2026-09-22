@@ -27,7 +27,7 @@ class SafeFlasher:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=30,
+                timeout=120,
             )
             return (res.stdout + "\n" + res.stderr).strip()
         except Exception as e:

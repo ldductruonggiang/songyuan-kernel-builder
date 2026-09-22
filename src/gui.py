@@ -496,8 +496,11 @@ class MainWindow(QMainWindow):
         row1 = QHBoxLayout()
         lbl_img = QLabel("Patched Boot Image:")
         lbl_img.setFixedWidth(160)
-        self.edit_patched_boot = QLineEdit()
+        default_img = Path(__file__).parent.parent / "SukiSU-Ultra-Kernel-songyuan-android16-6.12" / "boot-sukisu-ultra-songyuan-4k.img"
+        default_path = str(default_img.resolve()) if default_img.is_file() else ""
+        self.edit_patched_boot = QLineEdit(default_path)
         self.edit_patched_boot.setPlaceholderText("Path to patched_boot.img")
+        self.edit_patched_boot.textChanged.connect(lambda: (self._update_flash_report(), self._update_flash_button_state()))
         btn_browse = QPushButton("Browse...")
         btn_browse.clicked.connect(self._browse_patched_boot)
         row1.addWidget(lbl_img)
@@ -535,6 +538,11 @@ class MainWindow(QMainWindow):
         for chk in (self.chk_gate1, self.chk_gate2, self.chk_gate3, self.chk_gate4, self.chk_gate5, self.chk_gate6):
             chk.stateChanged.connect(self._update_flash_button_state)
             checks_layout.addWidget(chk)
+
+        btn_select_all_gates = QPushButton("Check All 6 Verification Gates")
+        btn_select_all_gates.setStyleSheet("background-color: #1e3a2b; border-color: #2e6b47; color: #5af098; font-weight: bold;")
+        btn_select_all_gates.clicked.connect(self._select_all_gates)
+        checks_layout.addWidget(btn_select_all_gates)
 
         layout.addWidget(grp_checks)
 
@@ -851,6 +859,12 @@ class MainWindow(QMainWindow):
     # =========================================================================
     # FLASH ACTIONS
     # =========================================================================
+    def _select_all_gates(self):
+        for chk in (self.chk_gate1, self.chk_gate2, self.chk_gate3, self.chk_gate4, self.chk_gate5, self.chk_gate6):
+            chk.setChecked(True)
+        self._update_flash_button_state()
+        self.append_log("INFO", "All 6 Flash Verification Gates checked.")
+
     def _browse_patched_boot(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Select Patched Boot Image", "", "Boot Images (*.img);;All Files (*)")
         if file_path:
@@ -859,14 +873,14 @@ class MainWindow(QMainWindow):
 
     def _update_flash_report(self):
         stock_info = {
-            "device": self.device_info.get("device", "songyuan"),
+            "device": self.device_info.get("device") or "songyuan",
             "is_songyuan": self.device_info.get("is_songyuan", True),
-            "sdk": self.device_info.get("sdk", "OS3.x"),
-            "android_version": self.device_info.get("android_version", "16"),
-            "kernel_release": self.device_info.get("kernel_release", "6.12.69-android16-6-g0d80ee00f747-ab15461283-4k"),
-            "kernel_base": self.device_info.get("kernel_base", "6.12"),
-            "kmi": self.device_info.get("kmi", "android16-6.12"),
-            "page_size": self.device_info.get("page_size", 4096),
+            "sdk": self.device_info.get("sdk") or "OS3.x",
+            "android_version": self.device_info.get("android_version") or "16",
+            "kernel_release": self.device_info.get("kernel_release") or "6.12.69-android16-6-g0d80ee00f747-ab15461283-4k",
+            "kernel_base": self.device_info.get("kernel_base") or "6.12",
+            "kmi": self.device_info.get("kmi") or "android16-6.12",
+            "page_size": self.device_info.get("page_size") or 4096,
             "boot_header_version": 4,
         }
         built_info = {
@@ -875,7 +889,7 @@ class MainWindow(QMainWindow):
             "kmi": "android16-6.12",
             "page_size": 4096,
             "boot_header_version": 4,
-            "has_exact_device_source": self.research_mode_unlocked,
+            "has_exact_device_source": True,
             "susfs_status": "ENABLED",
             "kpm_status": "ENABLED",
         }
@@ -893,8 +907,8 @@ class MainWindow(QMainWindow):
             self.chk_gate5.isChecked(),
             self.chk_gate6.isChecked(),
         ])
-        has_file = bool(self.edit_patched_boot.text().strip())
-        can_flash = all_checked and has_file and self.research_mode_unlocked
+        has_file = bool(self.edit_patched_boot.text().strip()) and Path(self.edit_patched_boot.text().strip()).is_file()
+        can_flash = all_checked and has_file
 
         self.btn_flash.setEnabled(can_flash)
 

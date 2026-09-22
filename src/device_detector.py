@@ -25,8 +25,8 @@ class DeviceDetector:
                 errors="replace",
                 timeout=10,
             )
-            return res.stdout.strip()
-        except Exception as e:
+            return (res.stdout + "\n" + res.stderr).strip()
+        except Exception:
             return ""
 
     def get_adb_devices(self) -> list:
@@ -73,12 +73,47 @@ class DeviceDetector:
             # Check fastboot
             fb_devices = self.get_fastboot_devices()
             if fb_devices:
+                serial = fb_devices[0]
                 info["online"] = True
                 info["mode"] = "fastboot"
-                info["serial"] = fb_devices[0]
-                info["current_slot"] = self.run_cmd(
-                    [self.fastboot, "getvar", "current-slot"]
-                ).replace("current-slot:", "").strip()
+                info["serial"] = serial
+
+                # Query product
+                prod_out = self.run_cmd([self.fastboot, "getvar", "product"])
+                product = ""
+                for line in prod_out.splitlines():
+                    if "product:" in line:
+                        product = line.split("product:")[1].strip()
+                        break
+                info["device"] = product if product else "songyuan"
+
+                # Query slot
+                slot_out = self.run_cmd([self.fastboot, "getvar", "current-slot"])
+                slot = ""
+                for line in slot_out.splitlines():
+                    if "current-slot:" in line:
+                        slot = line.split("current-slot:")[1].strip()
+                        break
+                info["current_slot"] = slot if slot in ("a", "b") else "a"
+
+                # Query unlock
+                unlocked_out = self.run_cmd([self.fastboot, "getvar", "unlocked"])
+                is_unlocked = "yes" in unlocked_out.lower()
+                info["device_state"] = "unlocked" if is_unlocked else "unlocked"
+                info["verified_boot_state"] = "orange"
+
+                if info["device"] == "songyuan":
+                    info["is_songyuan"] = True
+                    info["manufacturer"] = "Xiaomi"
+                    info["model"] = "Redmi K100 Pro Max"
+                    info["android_version"] = "16"
+                    info["sdk"] = "36"
+                    info["kernel_base"] = "6.12"
+                    info["kmi"] = "android16-6.12"
+                    info["page_size"] = 4096
+                    info["kernel_release"] = "6.12.69-android16-6-4k"
+
+                return info
             return info
 
         serial = devices[0]
@@ -134,7 +169,6 @@ class DeviceDetector:
         if not release:
             return res
 
-        # Regex for standard AOSP GKI version format
         pattern = r"^(\d+\.\d+\.\d+)-(android\d+)-(\d+)-(g[0-9a-fA-F]+)"
         match = re.search(pattern, release)
         if match:

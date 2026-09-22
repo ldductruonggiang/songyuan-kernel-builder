@@ -11,3 +11,8 @@ dist/
 *.egg-info/
 .idea/
 .vscode/
+*.zip
+*.img
+SukiSU-Ultra-Kernel-songyuan-android16-6.12/
+kernelsu_patched_20260804_072759.img
+flash_kernel.bat

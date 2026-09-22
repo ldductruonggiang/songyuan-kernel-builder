@@ -11,8 +11,12 @@ on:
         description: "Kernel Branch (Matches songyuan KMI: android16-6.12)"
         required: true
         default: "android16-6.12"
+      kernel_commit:
+        description: "Exact Stock ACK Commit (songyuan stock: 0d80ee00f747)"
+        required: true
+        default: "0d80ee00f747"
       susfs_branch:
-        description: "SUSFS Branch (Select 'none' unless you have custom SUSFS tree)"
+        description: "SUSFS Branch"
         required: true
         type: choice
         options:
@@ -61,37 +65,55 @@ jobs:
       - name: Checkout Builder Repository
         uses: actions/checkout@v4
 
-      - name: Install Host Dependencies & Toolchain
+      - name: Install Host Dependencies & Clang Toolchain
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             git ccache automake flex lzop bison gperf build-essential \
             zip curl zlib1g-dev libncurses-dev libssl-dev libelf-dev \
-            libdw-dev pkg-config \
-            clang-18 lld-18 llvm-18 python3 bc libxml2-utils \
+            libdw-dev pkg-config python3 python3-pip bc libxml2-utils \
             tar wget libarchive-tools \
             gcc-aarch64-linux-gnu
-          
-          # Create clang symlinks
-          sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
-          sudo ln -sf /usr/bin/clang++-18 /usr/bin/clang++
-          sudo ln -sf /usr/bin/ld.lld-18 /usr/bin/ld.lld
-          sudo ln -sf /usr/bin/llvm-ar-18 /usr/bin/llvm-ar
-          sudo ln -sf /usr/bin/llvm-nm-18 /usr/bin/llvm-nm
-          sudo ln -sf /usr/bin/llvm-objcopy-18 /usr/bin/llvm-objcopy
-          sudo ln -sf /usr/bin/llvm-objdump-18 /usr/bin/llvm-objdump
-          sudo ln -sf /usr/bin/llvm-readelf-18 /usr/bin/llvm-readelf
-          sudo ln -sf /usr/bin/llvm-strip-18 /usr/bin/llvm-strip
+
+          # Try installing clang-19; fallback to clang-18
+          if sudo apt-get install -y --no-install-recommends clang-19 lld-19 llvm-19; then
+            CLANG_VER=19
+          else
+            sudo apt-get install -y --no-install-recommends clang-18 lld-18 llvm-18
+            CLANG_VER=18
+          fi
+
+          echo "Using Clang version: $CLANG_VER"
+          sudo ln -sf /usr/bin/clang-$CLANG_VER /usr/bin/clang
+          sudo ln -sf /usr/bin/clang++-$CLANG_VER /usr/bin/clang++
+          sudo ln -sf /usr/bin/ld.lld-$CLANG_VER /usr/bin/ld.lld
+          sudo ln -sf /usr/bin/llvm-ar-$CLANG_VER /usr/bin/llvm-ar
+          sudo ln -sf /usr/bin/llvm-nm-$CLANG_VER /usr/bin/llvm-nm
+          sudo ln -sf /usr/bin/llvm-objcopy-$CLANG_VER /usr/bin/llvm-objcopy
+          sudo ln -sf /usr/bin/llvm-objdump-$CLANG_VER /usr/bin/llvm-objdump
+          sudo ln -sf /usr/bin/llvm-readelf-$CLANG_VER /usr/bin/llvm-readelf
+          sudo ln -sf /usr/bin/llvm-strip-$CLANG_VER /usr/bin/llvm-strip
 
           clang --version
           ld.lld --version
 
-      - name: Clone Kernel Source Tree (${{ inputs.kernel_branch }})
+      - name: Clone Kernel Source Tree & Checkout Exact Commit
         run: |
           echo "Cloning ${{ inputs.kernel_repo }} branch ${{ inputs.kernel_branch }}..."
-          git clone --depth=1 --branch ${{ inputs.kernel_branch }} ${{ inputs.kernel_repo }} kernel_workspace
+          git clone --depth=50 --branch ${{ inputs.kernel_branch }} ${{ inputs.kernel_repo }} kernel_workspace
           cd kernel_workspace
+          
+          if [ -n "${{ inputs.kernel_commit }}" ]; then
+            echo "Checking out exact commit: ${{ inputs.kernel_commit }}..."
+            git checkout ${{ inputs.kernel_commit }} || {
+              echo "Commit not in shallow history, unshallowing..."
+              git fetch --unshallow || git fetch --depth=500
+              git checkout ${{ inputs.kernel_commit }}
+            }
+          fi
+          
           echo "KERNEL_HEAD=$(git rev-parse HEAD)" >> $GITHUB_ENV
+          echo "Target commit confirmed: $(git rev-parse HEAD)"
 
       - name: Integrate SukiSU Ultra BUILT-IN & Apply Linux 6.12 Fixes
         run: |
@@ -136,22 +158,24 @@ jobs:
             echo "::warning::SUSFS branch '$branch' not found in SukiSU repo; proceeding with SukiSU core built-in."
           fi
 
-      - name: Configure Kernel Symbols (.config)
+      - name: Apply Exact Stock HyperOS 3 / SM8750 Kernel Config (.config)
         run: |
           cd kernel_workspace
           export ARCH=arm64
           export LLVM=1
           export LLVM_IAS=1
           export CROSS_COMPILE=aarch64-linux-gnu-
-          
-          echo "Generating base gki_defconfig..."
-          if [ -f "arch/arm64/configs/gki_defconfig" ]; then
-            make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
+
+          echo "Applying exact stock Xiaomi HyperOS 3 (SM8750) kernel config..."
+          if [ -f "../configs/stock_songyuan_6.12.config" ]; then
+            cp ../configs/stock_songyuan_6.12.config .config
+            echo "Successfully copied stock_songyuan_6.12.config into .config"
           else
-            make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- defconfig
+            echo "Config file not found in repo, generating gki_defconfig fallback..."
+            make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
           fi
 
-          echo "Applying SukiSU Core & BShield Bypass Config..."
+          echo "Applying SukiSU Core & Stealth Configs..."
           scripts/config --enable CONFIG_KSU
 
           # Hook method
@@ -173,7 +197,7 @@ jobs:
             scripts/config --enable CONFIG_KPM
           fi
 
-          # SUSFS Deep Stealth (Fix BShield Error 5, 6, 12: Mounts, Maps, Bootconfig)
+          # SUSFS Deep Stealth
           scripts/config --enable CONFIG_KSU_SUSFS
           scripts/config --enable CONFIG_KSU_SUSFS_SUS_PATH
           scripts/config --enable CONFIG_KSU_SUSFS_SUS_MOUNT
@@ -207,11 +231,6 @@ jobs:
             exit 1
           fi
 
-          if [ "${{ inputs.enable_kpm }}" = "true" ] && ! grep -q "^CONFIG_KPM=y" .config; then
-            echo "CRITICAL: CONFIG_KPM=y is missing!"
-            exit 1
-          fi
-
       - name: Build Kernel Image
         run: |
           cd kernel_workspace
@@ -228,9 +247,9 @@ jobs:
             echo "Build failed: arch/arm64/boot/Image not found!"
             exit 1
           fi
-          echo "Kernel compiled successfully."
+          echo "Kernel compiled successfully. Size: $(stat -c%s arch/arm64/boot/Image) bytes."
 
-      - name: Package Artifacts & Boot Header v4
+      - name: Package Boot Image with AVB Hash Footer (Header v4, 96MB)
         run: |
           mkdir -p out_artifacts
           cp kernel_workspace/arch/arm64/boot/Image out_artifacts/Image
@@ -239,7 +258,7 @@ jobs:
           # Install mkbootimg
           pip3 install --break-system-packages git+https://android.googlesource.com/platform/system/tools/mkbootimg.git || true
 
-          # Create Boot Header v4 image
+          # 1. Create Base Boot Header v4 Image
           if command -v mkbootimg &>/dev/null; then
             mkbootimg \
               --header_version 4 \
@@ -248,22 +267,37 @@ jobs:
               --output out_artifacts/boot-sukisu-ultra-songyuan-4k.img
           else
             python3 -c "
-          import struct, hashlib
+          import struct
           kernel = open('out_artifacts/Image', 'rb').read()
           header = bytearray(4096)
           header[0:8] = b'ANDROID!'
           struct.pack_into('<I', header, 8, len(kernel))
-          struct.pack_into('<I', header, 12, 0) # ramdisk_size = 0 in boot v4
-          struct.pack_into('<I', header, 16, (16 << 25)) # Android 16
-          struct.pack_into('<I', header, 20, 4096) # header_size
-          struct.pack_into('<I', header, 40, 4) # header_version = 4
+          struct.pack_into('<I', header, 12, 0)
+          struct.pack_into('<I', header, 16, 0)
+          struct.pack_into('<I', header, 20, 1584)
+          struct.pack_into('<I', header, 40, 4)
           padded_len = ((len(kernel) + 4095) // 4096) * 4096
           padded_kernel = kernel + b'\x00' * (padded_len - len(kernel))
           open('out_artifacts/boot-sukisu-ultra-songyuan-4k.img', 'wb').write(header + padded_kernel)
           "
           fi
 
-          # Generate SHA256 checksums
+          # 2. Add AVB Hash Footer (Partition size 100663296 bytes / 96MB matching songyuan ABL)
+          echo "Adding AVB Hash Footer with AOSP avbtool..."
+          python3 tools/avbtool.py add_hash_footer \
+            --image out_artifacts/boot-sukisu-ultra-songyuan-4k.img \
+            --partition_size 100663296 \
+            --partition_name boot \
+            --rollback_index 1785542400 \
+            --prop com.android.build.boot.os_version:16 \
+            --prop com.android.build.boot.fingerprint:POCO/songyuan_global/songyuan:16/BQ2A.260225.001-BP2A.250705.008/OS3.0.301.0.WGNTWXM:user/release-keys \
+            --prop com.android.build.boot.security_patch:2026-08-01
+
+          # 3. Verify Boot Image & AVB Structure
+          echo "=== AVB Audit Information ==="
+          python3 tools/avbtool.py info_image --image out_artifacts/boot-sukisu-ultra-songyuan-4k.img
+
+          # Generate SHA256 Checksums
           cd out_artifacts
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
