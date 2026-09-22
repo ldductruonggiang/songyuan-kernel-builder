@@ -12,14 +12,14 @@ on:
         required: true
         default: "android16-6.12"
       susfs_branch:
-        description: "SUSFS Branch"
+        description: "SUSFS Branch (Select 'none' unless you have custom SUSFS tree)"
         required: true
         type: choice
         options:
+          - "none"
           - "susfs-main"
           - "susfs-test"
-          - "none"
-        default: "susfs-main"
+        default: "none"
       hook_method:
         description: "Hook Method"
         required: true
@@ -67,8 +67,10 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             git ccache automake flex lzop bison gperf build-essential \
             zip curl zlib1g-dev libncurses-dev libssl-dev libelf-dev \
+            libdw-dev pkg-config \
             clang-18 lld-18 llvm-18 python3 bc libxml2-utils \
-            tar wget libarchive-tools
+            tar wget libarchive-tools \
+            gcc-aarch64-linux-gnu
           
           # Create clang symlinks
           sudo ln -sf /usr/bin/clang-18 /usr/bin/clang
@@ -95,10 +97,11 @@ jobs:
         run: |
           cd kernel_workspace
           echo "=== Integrating SukiSU Ultra Built-in ==="
-          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s builtin
+          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s main
           
           if [ -d "KernelSU" ]; then
             echo "SUKISU_COMMIT=$(git -C KernelSU rev-parse HEAD)" >> $GITHUB_ENV
+            echo "SukiSU integrated successfully."
           else
             echo "KernelSU directory not found!"
             exit 1
@@ -108,24 +111,25 @@ jobs:
         if: ${{ inputs.susfs_branch != 'none' }}
         run: |
           cd kernel_workspace
-          echo "=== Integrating SUSFS (${{ inputs.susfs_branch }}) ==="
-          curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s ${{ inputs.susfs_branch }} || {
-            echo "Branch ${{ inputs.susfs_branch }} failed, falling back to susfs-main..."
-            curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s susfs-main
-          }
+          branch="${{ inputs.susfs_branch }}"
+          echo "=== Integrating SUSFS ($branch) ==="
+          if ! curl -LSs "https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/main/kernel/setup.sh" | bash -s "$branch"; then
+            echo "::warning::SUSFS branch '$branch' not found in SukiSU repo; proceeding with SukiSU core built-in."
+          fi
 
       - name: Configure Kernel Symbols (.config)
         run: |
           cd kernel_workspace
           export ARCH=arm64
-          export CC=clang
-          export LD=ld.lld
+          export LLVM=1
+          export LLVM_IAS=1
+          export CROSS_COMPILE=aarch64-linux-gnu-
           
           echo "Generating base gki_defconfig..."
           if [ -f "arch/arm64/configs/gki_defconfig" ]; then
-            make ARCH=arm64 CC=clang LD=ld.lld gki_defconfig
+            make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- gki_defconfig
           else
-            make ARCH=arm64 CC=clang LD=ld.lld defconfig
+            make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- defconfig
           fi
 
           echo "Applying SukiSU Core Config..."
@@ -158,10 +162,11 @@ jobs:
           else
             scripts/config --enable CONFIG_ARM64_16K_PAGES
             scripts/config --disable CONFIG_ARM64_4K_PAGES
+            scripts/config --disable CONFIG_ARM64_64K_PAGES
           fi
 
-          echo "Refreshing config with make olddefconfig..."
-          make ARCH=arm64 CC=clang LD=ld.lld olddefconfig
+          echo "Refreshing config non-interactively with make olddefconfig..."
+          yes "" | make ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
 
           # Strict Verification
           echo "--- Configuration Audit ---"
@@ -184,10 +189,9 @@ jobs:
           echo "Building kernel with $NPROC threads..."
           make -j"$NPROC" \
             ARCH=arm64 \
-            CC=clang \
-            LD=ld.lld \
-            CROSS_COMPILE=aarch64-linux-gnu- \
             LLVM=1 \
+            LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
             Image
 
           if [ ! -f "arch/arm64/boot/Image" ]; then
