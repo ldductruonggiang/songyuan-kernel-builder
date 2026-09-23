@@ -113,6 +113,7 @@ jobs:
           test "$(git rev-parse "${{ inputs.kernel_commit }}^{commit}")" = "$CURRENT_COMMIT"
           test "$CURRENT_COMMIT" = "0d80ee00f7471317740f9843ca78ae96409377ee"
           test "${{ inputs.android_build_id }}" = "ab15461283"
+          test "${{ inputs.enable_kpm }}" = "true"
 
           git config user.name "Kleaf Builder"
           git config user.email "builder@android.com"
@@ -248,6 +249,7 @@ jobs:
           EOF
           git add arch/arm64/configs/songyuan_stock.fragment arch/arm64/configs/sukisu_susfs.fragment BUILD.bazel workspace_status.json
           git commit -m "Register SukiSU & SUSFS defconfig fragment in Kleaf"
+          echo "INTEGRATED_SOURCE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           cd ../..
 
       - name: Build GKI Distribution using Official Kleaf Target (//common:kernel_aarch64_dist)
@@ -432,6 +434,7 @@ jobs:
 
           Kernel Source Baseline:     ${{ inputs.kernel_manifest_branch }}
           SOURCE COMMIT:              ${{ inputs.kernel_commit }}
+          INTEGRATED SOURCE COMMIT:   $INTEGRATED_SOURCE_COMMIT
           KMI VERSION:                android16-6
           KERNEL RELEASE:             $FINAL_RELEASE_STR
           ANDROID BUILD ID:           ${{ inputs.android_build_id }}
@@ -466,6 +469,7 @@ jobs:
             "device": "songyuan",
             "rom": "OS3.0.301.0.WGNTWXM",
             "source_commit": "${{ inputs.kernel_commit }}",
+            "integrated_source_commit": "$INTEGRATED_SOURCE_COMMIT",
             "kmi_version": "android16-6",
             "kernel_release": "$FINAL_RELEASE_STR",
             "android_build_id": "${{ inputs.android_build_id }}",
