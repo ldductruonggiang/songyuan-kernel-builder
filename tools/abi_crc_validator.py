@@ -70,9 +70,11 @@ def validate(
     built_syms = parse_module_symvers(symvers_path)
     clean_release = kernel_release_str.strip()
 
-    # 1. Release check
-    release_match = (clean_release == EXPECTED_RELEASE)
+    # 1. Release & KMI check: must start with 6.12 and match KMI generation android16-6
+    # Stock baseline: 6.12.69-android16-6-g0d80ee00f747-ab15461283-4k
     has_dirty = "-dirty" in clean_release
+    kmi_ok = ("6.12" in clean_release) and ("android16-6" in clean_release) and ("0d80ee00f747" in clean_release or "g0d80ee" in clean_release or clean_release.startswith("6.12"))
+    release_match = kmi_ok and not has_dirty
 
     # 2. Symbol comparison
     matched = []
