@@ -141,10 +141,12 @@ jobs:
           cp -r susfs_source/kernel_patches/include/* include/
 
           echo "Applying SUSFS patch to KernelSU driver..."
-          cd drivers/kernelsu
-          git apply --check ../../susfs_source/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
-          git apply ../../susfs_source/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
-          cd ../..
+          cd KernelSU
+          git apply --check ../susfs_source/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
+          git apply ../susfs_source/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
+          cd ..
+          rm -rf drivers/kernelsu
+          cp -r KernelSU/kernel drivers/kernelsu
 
           rm -rf susfs_source
           git add -A
