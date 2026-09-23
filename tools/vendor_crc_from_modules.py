@@ -51,19 +51,18 @@ def read_module(path: Path):
         return magic[0].removeprefix("vermagic="), versions, exports
 
 
-def generate(directories: list[Path]):
+def generate(directories: list[tuple[str, Path]]):
     symbols = defaultdict(lambda: defaultdict(set))
     providers = defaultdict(lambda: defaultdict(lambda: defaultdict(set)))
     imports = []
     magics = defaultdict(Counter)
     module_count = Counter()
-    for directory in directories:
+    for partition, directory in directories:
         files = sorted(directory.rglob("*.ko"))
         if not files:
             raise ValueError(f"No .ko files found: {directory}")
         for path in files:
             magic, versions, exports = read_module(path)
-            partition = directory.name
             owner = f"{partition}/{path.relative_to(directory).as_posix()}"
             module_count[partition] += 1
             magics[partition][magic] += 1
@@ -114,8 +113,14 @@ if __name__ == "__main__":
     parser.add_argument("system_dlkm", type=Path)
     parser.add_argument("reference", type=Path)
     parser.add_argument("metadata", type=Path)
+    parser.add_argument("--vendor-boot", required=True, type=Path,
+                        help="extracted vendor_boot ramdisk containing lib/modules/*.ko")
     args = parser.parse_args()
-    reference, metadata = generate([args.vendor_dlkm, args.system_dlkm])
+    reference, metadata = generate([
+        ("vendor_dlkm", args.vendor_dlkm),
+        ("system_dlkm", args.system_dlkm),
+        ("vendor_boot", args.vendor_boot),
+    ])
     args.reference.write_text(json.dumps(reference, indent=2) + "\n", encoding="utf-8")
     args.metadata.write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(metadata, indent=2))

@@ -96,6 +96,8 @@ jobs:
           CURRENT_COMMIT=$(git rev-parse HEAD)
           echo "Checked out commit: $CURRENT_COMMIT"
           test "$(git rev-parse "${{ inputs.kernel_commit }}^{commit}")" = "$CURRENT_COMMIT"
+          test "$CURRENT_COMMIT" = "0d80ee00f7471317740f9843ca78ae96409377ee"
+          test "${{ inputs.android_build_id }}" = "ab15461283"
 
           git config user.name "Kleaf Builder"
           git config user.email "builder@android.com"
@@ -211,7 +213,13 @@ jobs:
           else:
               raise RuntimeError("Target string not found in BUILD.bazel!")
           '
-          git add arch/arm64/configs/songyuan_stock.fragment arch/arm64/configs/sukisu_susfs.fragment BUILD.bazel
+          # Kleaf officially supports a fixed workspace SCMVERSION for release
+          # builds. Preserve the stock ACK identity and Android build number
+          # while recording the actual integrated source commit separately.
+          cat > workspace_status.json <<'EOF'
+          {"SCMVERSION":"-g0d80ee00f747-ab15461283"}
+          EOF
+          git add arch/arm64/configs/songyuan_stock.fragment arch/arm64/configs/sukisu_susfs.fragment BUILD.bazel workspace_status.json
           git commit -m "Register SukiSU & SUSFS defconfig fragment in Kleaf"
           cd ../..
 
@@ -263,13 +271,13 @@ jobs:
 
           # The release must come from the compiled Image itself.
           BUILT_RELEASE=$(python3 tools/kernel_release.py out/dist/Image)
+          echo "Detected Built Kernel Release: $BUILT_RELEASE"
           test "$BUILT_RELEASE" = "6.12.69-android16-6-g0d80ee00f747-ab15461283-4k"
           if [ -f out/dist/kernel.release ]; then
             test "$(tr -d '\r\n' < out/dist/kernel.release)" = "$BUILT_RELEASE"
           fi
 
           echo "FINAL_RELEASE_STR=$BUILT_RELEASE" >> $GITHUB_ENV
-          echo "Detected Built Kernel Release: $BUILT_RELEASE"
 
       - name: Gate A - Validate Kleaf KMI & Vendor Symbol CRC Compatibility
         run: |
@@ -291,6 +299,20 @@ jobs:
             echo "KLEAF_KERNEL_COMPATIBILITY=FAIL" >> $GITHUB_ENV
             echo "[Gate A] KLEAF_KERNEL_COMPATIBILITY=FAIL"
           fi
+
+      - name: Upload compiled kernel for offline diagnostics
+        if: ${{ always() && hashFiles('out/dist/Image') != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: SukiSU-Ultra-songyuan-KERNEL-ONLY-NO-FLASH
+          path: |
+            out/dist/Image
+            out/dist/kernel_aarch64_Module.symvers
+            out/dist/kernel_aarch64_dot_config
+            out/dist/System.map
+            out/final/abi-report.txt
+          if-no-files-found: error
+          compression-level: 9
 
       - name: Gate B - Dual-VBMeta Structural Repack & Verification
         run: |

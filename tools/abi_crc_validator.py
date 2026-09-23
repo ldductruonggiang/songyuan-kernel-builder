@@ -74,8 +74,9 @@ def validate(
         if metadata.get("symbol_count") != len(reference):
             raise ValueError("Module metadata symbol count does not match CRC reference")
         counts = metadata.get("module_count", {})
-        if not counts.get("vendor_dlkm") or not counts.get("system_dlkm"):
-            raise ValueError("CRC reference lacks vendor_dlkm or system_dlkm modules")
+        if any(not counts.get(partition) for partition in
+               ("vendor_boot", "vendor_dlkm", "system_dlkm")):
+            raise ValueError("CRC reference lacks vendor_boot, vendor_dlkm, or system_dlkm modules")
     invalid_reference = [
         name for name, info in reference.items()
         if not re.fullmatch(r"0x[0-9a-fA-F]{8}", str(info.get("crc", "")))
@@ -145,6 +146,7 @@ def validate(
         f"Invalid Reference CRCs: {len(invalid_reference)}",
         f"Stock Vendor Modules:    {metadata['module_count']['vendor_dlkm'] if metadata else 'UNKNOWN'}",
         f"Stock System Modules:    {metadata['module_count']['system_dlkm'] if metadata else 'UNKNOWN'}",
+        f"Stock Vendor Boot:       {metadata['module_count']['vendor_boot'] if metadata else 'UNKNOWN'}",
         f"Module Dependencies:     {len(metadata['module_dependency_mismatches']) if metadata else 'UNKNOWN'} mismatches",
         f"Matched Symbols:        {len(matched)} ({match_pct:.2f}%)",
         f"Mismatched Symbols:     {len(mismatched)}",
