@@ -415,8 +415,8 @@ jobs:
           
           Kernel Source Baseline:     ${{ inputs.kernel_manifest_branch || 'common-android16-6.12' }}
           SOURCE REF:                 ${{ inputs.kernel_commit || '0d80ee00f747' }}
-Source Acquisition:         ${KERNEL_SOURCE_MODE:-unknown}
-Source Archive SHA256:      ${KERNEL_ARCHIVE_SHA256:-unknown}
+          Source Acquisition:         ${KERNEL_SOURCE_MODE:-unknown}
+          Source Archive SHA256:      ${KERNEL_ARCHIVE_SHA256:-unknown}
           KMI VERSION:                android16-6
           KERNEL RELEASE:             $FINAL_RELEASE_STR
           ANDROID BUILD ID:           ${{ inputs.android_build_id || 'ab15461283' }}
