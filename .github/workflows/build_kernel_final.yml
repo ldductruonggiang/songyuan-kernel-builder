@@ -140,8 +140,12 @@ jobs:
           cd ..
 
           echo "Applying SUSFS kernel patch..."
-          git apply --check susfs_source/kernel_patches/50_add_susfs_in_gki-android16-6.12.patch
-          git apply susfs_source/kernel_patches/50_add_susfs_in_gki-android16-6.12.patch
+          # Upstream's generic patch does not apply to this exact stock ACK
+          # revision. This reviewed adaptation retains its changes and adjusts
+          # the four diverged contexts, including show_smap()'s new predicate.
+          SUSFS_ACK_PATCH="$GITHUB_WORKSPACE/patches/susfs-gki-android16-6.12-ack-0d80ee00.patch"
+          git apply --check "$SUSFS_ACK_PATCH"
+          git apply "$SUSFS_ACK_PATCH"
 
           cp -r susfs_source/kernel_patches/fs/* fs/
           cp -r susfs_source/kernel_patches/include/* include/
