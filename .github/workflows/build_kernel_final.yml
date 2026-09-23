@@ -113,8 +113,6 @@ jobs:
           SUKISU_COMMIT=$(git rev-parse HEAD)
           test "$SUKISU_COMMIT" = "${{ inputs.sukisu_ref }}"
           echo "SUKISU_COMMIT=$SUKISU_COMMIT" >> $GITHUB_ENV
-          git apply --check "$GITHUB_WORKSPACE/patches/sukisu-ack-6.12-api.patch"
-          git apply "$GITHUB_WORKSPACE/patches/sukisu-ack-6.12-api.patch"
           rm -rf .git
           cd ..
 
@@ -152,10 +150,10 @@ jobs:
           cp -r susfs_source/kernel_patches/fs/* fs/
           cp -r susfs_source/kernel_patches/include/* include/
 
-          echo "Checking SukiSU's built-in SUSFS support..."
+          echo "Applying SUSFS patch to KernelSU driver..."
           cd KernelSU
-          grep -q '^config KSU_SUSFS$' kernel/Kconfig
-          grep -q 'SUSFS_INLINE_HOOK' kernel/Makefile
+          git apply --check ../susfs_source/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
+          git apply ../susfs_source/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
           cd ..
           rm -rf drivers/kernelsu
           cp -r KernelSU/kernel drivers/kernelsu
