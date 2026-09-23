@@ -40,7 +40,7 @@ index 9f5d06f..eeea6b7 100644
  obj-$(CONFIG_PROC_FS)		+= proc_namespace.o
  obj-$(CONFIG_LEGACY_DIRECT_IO)	+= direct-io.o
 diff --git a/fs/exec.c b/fs/exec.c
-index 965fdc5..b3a1a39 100644
+index 965fdc5..bcb7826 100644
 --- a/fs/exec.c
 +++ b/fs/exec.c
 @@ -69,6 +69,9 @@
@@ -53,7 +53,7 @@ index 965fdc5..b3a1a39 100644
  #include <linux/dma-buf.h>
  
  #include <linux/uaccess.h>
-@@ -1932,6 +1935,18 @@ out:
+@@ -1932,6 +1935,16 @@ out:
  	return retval;
  }
  
@@ -65,21 +65,12 @@ index 965fdc5..b3a1a39 100644
 +			void *envp, int *flags);
 +extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr, void *argv,
 +				void *envp, int *flags);
-+extern int ksu_handle_post_execveat_sucompat(int *fd, struct filename **filename_ptr, void *argv,
-+				void *envp, int *flags, int *retval);
 +#endif
 +
  static int do_execveat_common(int fd, struct filename *filename,
  			      struct user_arg_ptr argv,
  			      struct user_arg_ptr envp,
-@@ -1939,10 +1954,28 @@ static int do_execveat_common(int fd, struct filename *filename,
- {
- 	struct linux_binprm *bprm;
- 	int retval;
-+#ifdef CONFIG_KSU_SUSFS
-+	bool is_su_session = false;
-+#endif // #ifdef CONFIG_KSU_SUSFS
- 
+@@ -1943,6 +1956,21 @@ static int do_execveat_common(int fd, struct filename *filename,
  	if (IS_ERR(filename))
  		return PTR_ERR(filename);
  
@@ -89,9 +80,9 @@ index 965fdc5..b3a1a39 100644
 +
 +	if (static_branch_likely(&ksu_su_compat_enabled)) {
 +		if (static_branch_unlikely(&susfs_is_sdcard_android_data_not_decrypted)) {
-+			is_su_session = !ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
++			(void)ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
 +		} else {
-+			is_su_session = !ksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags);
++			(void)ksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags);
 +		}
 +	}
 +
@@ -101,17 +92,6 @@ index 965fdc5..b3a1a39 100644
  	/*
  	 * We move the actual failure in case of RLIMIT_NPROC excess from
  	 * set*uid() to execve() because too many poorly written programs
-@@ -2009,6 +2042,10 @@ static int do_execveat_common(int fd, struct filename *filename,
- 	}
- 
- 	retval = bprm_execve(bprm);
-+#ifdef CONFIG_KSU_SUSFS
-+	if (unlikely(is_su_session))
-+		(void)ksu_handle_post_execveat_sucompat(&fd, &filename, &argv, &envp, &flags, &retval);
-+#endif // #ifdef CONFIG_KSU_SUSFS
- out_free:
- 	free_bprm(bprm);
- 
 diff --git a/fs/namei.c b/fs/namei.c
 index bdc243f..665c974 100644
 --- a/fs/namei.c

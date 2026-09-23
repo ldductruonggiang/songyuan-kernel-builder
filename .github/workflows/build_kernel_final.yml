@@ -145,7 +145,9 @@ jobs:
           echo "Applying SUSFS kernel patch..."
           # Upstream's generic patch does not apply to this exact stock ACK
           # revision. This reviewed adaptation retains its changes and adjusts
-          # the four diverged contexts, including show_smap()'s new predicate.
+          # the diverged ACK contexts. It also omits a post-exec callback
+          # absent from this pinned SukiSU implementation; native sucompat
+          # performs its work in the pre-exec callback.
           SUSFS_ACK_PATCH="$GITHUB_WORKSPACE/patches/susfs-gki-android16-6.12-ack-0d80ee00.patch"
           git apply --check "$SUSFS_ACK_PATCH"
           git apply "$SUSFS_ACK_PATCH"
