@@ -27,7 +27,7 @@ class ReleaseGateTests(unittest.TestCase):
                 EXPECTED_RELEASE,
                 str(root / "report.txt"),
             )
-            self.assertFalse(result["flashable"])
+            self.assertFalse(result["abi_compatible"])
             result = validate(
                 str(root / "Module.symvers"),
                 str(root / "reference.json"),
@@ -64,7 +64,7 @@ class ReleaseGateTests(unittest.TestCase):
                 str(root / "report.txt"),
             )
             self.assertEqual(result["invalid_reference"], 1)
-            self.assertFalse(result["flashable"])
+            self.assertFalse(result["abi_compatible"])
 
 
 if __name__ == "__main__":

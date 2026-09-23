@@ -341,13 +341,24 @@ jobs:
             out/final/abi-report.txt \
             stock/vendor_module_metadata.json
 
-          if grep -q "FINAL ABI STATUS: FLASHABLE=YES" out/final/abi-report.txt; then
+          if grep -q "FINAL ABI STATUS: ABI_COMPATIBLE=YES" out/final/abi-report.txt; then
             echo "KLEAF_KERNEL_COMPATIBILITY=PASS" >> $GITHUB_ENV
             echo "[Gate A] KLEAF_KERNEL_COMPATIBILITY=PASS"
           else
             echo "KLEAF_KERNEL_COMPATIBILITY=FAIL" >> $GITHUB_ENV
             echo "[Gate A] KLEAF_KERNEL_COMPATIBILITY=FAIL"
           fi
+
+      - name: Label kernel-only diagnostic artifact
+        run: |
+          cat > out/final/KERNEL_ONLY_README.txt <<'EOF'
+          KERNEL-ONLY DIAGNOSTIC ARTIFACT - FLASHABLE=NO
+
+          Image is a raw compiled kernel, not a boot.img. Gate A checks release,
+          configuration, and stock module ABI/CRC compatibility only. Gate B must
+          independently validate boot image structure and AVB signing before a
+          flashable boot.img can be claimed. Do not flash files in this ZIP.
+          EOF
 
       - name: Upload compiled kernel for offline diagnostics
         if: ${{ always() && hashFiles('out/dist/Image') != '' }}
@@ -360,6 +371,7 @@ jobs:
             out/dist/kernel_aarch64_dot_config
             out/dist/System.map
             out/final/abi-report.txt
+            out/final/KERNEL_ONLY_README.txt
           if-no-files-found: error
           compression-level: 9
 

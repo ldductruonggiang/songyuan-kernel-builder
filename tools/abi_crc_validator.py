@@ -2,7 +2,7 @@
 """
 ABI & Symbol CRC Gate Validator for Redmi K100 Pro Max (songyuan)
 Compares Module.symvers against stock vendor_symbol_crc_reference.json
-Enforces fail-closed rules: FLASHABLE=YES only if all critical symbols match and release string matches.
+Enforces fail-closed ABI compatibility rules. Boot-image flashability is a separate AVB gate.
 """
 
 import sys
@@ -117,9 +117,9 @@ def validate(
     total_ref = len(reference)
     match_pct = (len(matched) / total_ref * 100) if total_ref > 0 else 0
 
-    # Determine flashable
+    # Determine ABI compatibility; this says nothing about boot-image AVB validity.
     # A missing vendor symbol is an unknown ABI result, not evidence of compatibility.
-    flashable = (
+    abi_compatible = (
         release_match
         and not has_dirty
         and total_ref > 0
@@ -181,15 +181,16 @@ def validate(
             report_lines.append(f"  * {sym}: expected {exp}, got {act} (used by {mod[:2]})")
         report_lines.append("--------------------------------------------------")
 
-    verdict = "YES" if flashable else "NO"
-    report_lines.append(f"FINAL ABI STATUS: FLASHABLE={verdict}")
+    verdict = "YES" if abi_compatible else "NO"
+    report_lines.append(f"FINAL ABI STATUS: ABI_COMPATIBLE={verdict}")
+    report_lines.append("FLASHABLE=NO (kernel-only ABI audit; boot AVB gate not evaluated here)")
     report_lines.append("==================================================")
 
     out_path.write_text("\n".join(report_lines), encoding="utf-8")
     print("\n".join(report_lines))
 
     return {
-        "flashable": flashable,
+        "abi_compatible": abi_compatible,
         "release_match": release_match,
         "dirty": has_dirty,
         "total_ref": total_ref,
@@ -213,8 +214,8 @@ if __name__ == "__main__":
     metadata_file = sys.argv[5] if len(sys.argv) > 5 else None
 
     res = validate(symvers, ref_json, rel_str, out_rep, metadata_file)
-    if not res["flashable"]:
-        print("[WARNING] ABI Gate check did not achieve FLASHABLE=YES!")
+    if not res["abi_compatible"]:
+        print("[WARNING] ABI Gate check did not achieve ABI_COMPATIBLE=YES!")
         sys.exit(2)
     else:
-        print("[SUCCESS] ABI Gate passed! FLASHABLE=YES")
+        print("[SUCCESS] ABI Gate passed! ABI_COMPATIBLE=YES; boot AVB gate remains separate")
