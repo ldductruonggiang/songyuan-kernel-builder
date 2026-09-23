@@ -32,6 +32,21 @@ on:
         required: true
         type: boolean
         default: true
+      enable_susfs_spoof_uname:
+        description: "Enable SUSFS uname spoofing"
+        required: true
+        type: boolean
+        default: false
+      enable_susfs_spoof_cmdline:
+        description: "Enable SUSFS cmdline/bootconfig spoofing"
+        required: true
+        type: boolean
+        default: false
+      enable_susfs_hide_symbols:
+        description: "Hide SUSFS kernel symbols"
+        required: true
+        type: boolean
+        default: false
       android_build_id:
         description: "Stock Android Build ID Identifier"
         required: false
@@ -189,6 +204,18 @@ jobs:
           CONFIG_KSU_SUSFS_SUS_KSTAT=y
           CONFIG_KSU_SUSFS_SUS_MAP=y
           EOF
+          for option in \
+            KSU_SUSFS_SPOOF_UNAME:${{ inputs.enable_susfs_spoof_uname }} \
+            KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG:${{ inputs.enable_susfs_spoof_cmdline }} \
+            KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS:${{ inputs.enable_susfs_hide_symbols }}; do
+            name=${option%%:*}
+            enabled=${option##*:}
+            if [ "$enabled" = true ]; then
+              echo "CONFIG_${name}=y" >> arch/arm64/configs/sukisu_susfs.fragment
+            else
+              echo "# CONFIG_${name} is not set" >> arch/arm64/configs/sukisu_susfs.fragment
+            fi
+          done
           cat arch/arm64/configs/sukisu_susfs.fragment
 
           echo "=== Registering stock and feature fragments into BUILD.bazel ==="
@@ -266,6 +293,26 @@ jobs:
 
           cd "$GITHUB_WORKSPACE"
           python3 tools/stock_config_gate.py configs/stock_songyuan_6.12.config out/dist/.config
+          for option in CONFIG_KSU CONFIG_KPM CONFIG_KSU_SUSFS \
+            CONFIG_KSU_SUSFS_SUS_PATH CONFIG_KSU_SUSFS_SUS_MOUNT \
+            CONFIG_KSU_SUSFS_SUS_KSTAT CONFIG_KSU_SUSFS_SUS_MAP; do
+            grep -qx "${option}=y" out/dist/.config || {
+              echo "FATAL: required feature $option is not enabled in final .config"
+              exit 1
+            }
+          done
+          for option in \
+            KSU_SUSFS_SPOOF_UNAME:${{ inputs.enable_susfs_spoof_uname }} \
+            KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG:${{ inputs.enable_susfs_spoof_cmdline }} \
+            KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS:${{ inputs.enable_susfs_hide_symbols }}; do
+            name=${option%%:*}
+            enabled=${option##*:}
+            if [ "$enabled" = true ]; then
+              grep -qx "CONFIG_${name}=y" out/dist/.config
+            else
+              grep -qx "# CONFIG_${name} is not set" out/dist/.config
+            fi
+          done
           KERNEL_SIZE=$(stat -c%s out/dist/Image)
           echo "Kleaf Image Size: $KERNEL_SIZE bytes"
 
