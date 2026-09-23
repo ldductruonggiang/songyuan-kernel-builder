@@ -112,6 +112,10 @@ jobs:
           git checkout ${{ inputs.sukisu_ref }}
           SUKISU_COMMIT=$(git rev-parse HEAD)
           test "$SUKISU_COMMIT" = "${{ inputs.sukisu_ref }}"
+          if [ "$SUKISU_COMMIT" = "b20dee702035af09cb2ecb5f35443bbc1747f3e6" ]; then
+            echo "::error::Pinned SukiSU builtin commit does not compile against ACK 6.12: netlink_kernel_cfg.cb_mutex and security_add_hooks API differ. Await an official upstream fix; see https://github.com/SukiSU-Ultra/SukiSU-Ultra/issues/921"
+            exit 1
+          fi
           echo "SUKISU_COMMIT=$SUKISU_COMMIT" >> $GITHUB_ENV
           rm -rf .git
           cd ..
