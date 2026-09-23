@@ -89,11 +89,48 @@ jobs:
           repo sync -c -j"$(nproc)" --no-tags --no-clone-bundle
 
           cd common
-          echo "=== Checking out exact ACK commit: ${{ inputs.kernel_commit || '0d80ee00f747' }} ==="
-          git fetch origin ${{ inputs.kernel_commit || '0d80ee00f747' }} --depth=1 || true
-          git checkout ${{ inputs.kernel_commit || '0d80ee00f747' }}
+          KERNEL_COMMIT="${{ inputs.kernel_commit || '0d80ee00f747' }}"
+          MANIFEST_BRANCH="${{ inputs.kernel_manifest_branch || 'common-android16-6.12' }}"
+          COMMON_BRANCH="${MANIFEST_BRANCH#common-}"
+          COMMON_URL="https://android.googlesource.com/kernel/common"
+
+          echo "=== Resolving exact ACK commit: $KERNEL_COMMIT ==="
+          echo "Common source branch: $COMMON_BRANCH"
+          echo "Existing repo remotes:"
+          git remote -v || true
+
+          FULL_COMMIT=""
+          if git rev-parse --verify "${KERNEL_COMMIT}^{commit}" >/dev/null 2>&1; then
+            FULL_COMMIT=$(git rev-parse "${KERNEL_COMMIT}^{commit}")
+          else
+            echo "Commit is not present in shallow repo sync; fetching ACK history directly..."
+            git fetch --no-tags --filter=blob:none --depth=5000               "$COMMON_URL" "refs/heads/$COMMON_BRANCH"
+
+            FULL_COMMIT=$(git rev-list FETCH_HEAD | grep -m1 "^$KERNEL_COMMIT" || true)
+
+            if [ -z "$FULL_COMMIT" ]; then
+              echo "Short commit not found in first 5000 commits; deepening history..."
+              git fetch --no-tags --filter=blob:none --deepen=15000                 "$COMMON_URL" "refs/heads/$COMMON_BRANCH"
+              FULL_COMMIT=$(git rev-list FETCH_HEAD | grep -m1 "^$KERNEL_COMMIT" || true)
+            fi
+          fi
+
+          if [ -z "$FULL_COMMIT" ]; then
+            echo "FATAL: ACK commit prefix '$KERNEL_COMMIT' was not found on $COMMON_BRANCH."
+            exit 1
+          fi
+
+          echo "Resolved ACK commit: $FULL_COMMIT"
+          git checkout --detach "$FULL_COMMIT"
           CURRENT_COMMIT=$(git rev-parse HEAD)
-          echo "Checked out commit: $CURRENT_COMMIT"
+
+          if [[ "$CURRENT_COMMIT" != "$KERNEL_COMMIT"* ]]; then
+            echo "FATAL: checked-out commit $CURRENT_COMMIT does not match requested prefix $KERNEL_COMMIT"
+            exit 1
+          fi
+
+          echo "Checked out exact ACK baseline: $CURRENT_COMMIT"
+          echo "KERNEL_FULL_COMMIT=$CURRENT_COMMIT" >> "$GITHUB_ENV"
 
           git config user.name "Kleaf Builder"
           git config user.email "builder@android.com"
