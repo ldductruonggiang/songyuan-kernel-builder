@@ -8,6 +8,22 @@ from tools.stock_config_gate import check
 
 
 class ReleaseGateTests(unittest.TestCase):
+    def test_abi_pass_does_not_mark_kernel_only_artifact_flashable(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "Module.symvers").write_text("0x12345678\tfoo\tvmlinux\tEXPORT_SYMBOL\t\n")
+            (root / "reference.json").write_text('{"foo": {"crc": "0x12345678"}}')
+            report = root / "report.txt"
+            result = validate(
+                str(root / "Module.symvers"),
+                str(root / "reference.json"),
+                EXPECTED_RELEASE,
+                str(report),
+            )
+            self.assertTrue(result["abi_compatible"])
+            self.assertIn("FINAL ABI STATUS: ABI_COMPATIBLE=YES", report.read_text())
+            self.assertIn("FLASHABLE=NO", report.read_text())
+
     def test_embedded_release_is_read_from_image(self):
         with tempfile.TemporaryDirectory() as directory:
             image = Path(directory) / "Image"
