@@ -1,6 +1,11 @@
 name: Build SukiSU Ultra + SUSFS + KPM Final Kernel (Kleaf / Bazel)
 
 on:
+  push:
+    branches:
+      - v2
+    paths:
+      - ".github/workflows/build_kernel_final.yml"
   workflow_dispatch:
     inputs:
       kernel_manifest_repo:
@@ -71,22 +76,22 @@ jobs:
           set -euo pipefail
           export PATH="$HOME/.bin:$PATH"
 
-          echo "=== [3/11] Initializing Repo Manifest (${{ inputs.kernel_manifest_branch }}) ==="
+          echo "=== [3/11] Initializing Repo Manifest (${{ inputs.kernel_manifest_branch || 'common-android16-6.12' }}) ==="
           mkdir -p kleaf_workspace
           cd kleaf_workspace
 
           repo init \
-            -u "${{ inputs.kernel_manifest_repo }}" \
-            -b "${{ inputs.kernel_manifest_branch }}" \
+            -u "${{ inputs.kernel_manifest_repo || 'https://android.googlesource.com/kernel/manifest' }}" \
+            -b "${{ inputs.kernel_manifest_branch || 'common-android16-6.12' }}" \
             --depth=1
 
           echo "=== Syncing Source Repositories (Shallow) ==="
           repo sync -c -j"$(nproc)" --no-tags --no-clone-bundle
 
           cd common
-          echo "=== Checking out exact ACK commit: ${{ inputs.kernel_commit }} ==="
-          git fetch origin ${{ inputs.kernel_commit }} --depth=1 || true
-          git checkout ${{ inputs.kernel_commit }}
+          echo "=== Checking out exact ACK commit: ${{ inputs.kernel_commit || '0d80ee00f747' }} ==="
+          git fetch origin ${{ inputs.kernel_commit || '0d80ee00f747' }} --depth=1 || true
+          git checkout ${{ inputs.kernel_commit || '0d80ee00f747' }}
           CURRENT_COMMIT=$(git rev-parse HEAD)
           echo "Checked out commit: $CURRENT_COMMIT"
 
@@ -94,7 +99,7 @@ jobs:
           git config user.email "builder@android.com"
           cd ../..
 
-      - name: Integrate SukiSU Ultra BUILT-IN (${{ inputs.sukisu_ref }})
+      - name: Integrate SukiSU Ultra BUILT-IN (${{ inputs.sukisu_ref || 'b20dee702035af09cb2ecb5f35443bbc1747f3e6' }})
         run: |
           set -euo pipefail
           echo "=== [4/11] Integrating SukiSU Ultra Built-in ==="
@@ -102,7 +107,7 @@ jobs:
 
           git clone https://github.com/SukiSU-Ultra/SukiSU-Ultra KernelSU
           cd KernelSU
-          git checkout ${{ inputs.sukisu_ref }}
+          git checkout ${{ inputs.sukisu_ref || 'b20dee702035af09cb2ecb5f35443bbc1747f3e6' }}
           SUKISU_COMMIT=$(git rev-parse HEAD)
           echo "SUKISU_COMMIT=$SUKISU_COMMIT" >> $GITHUB_ENV
           rm -rf .git
@@ -117,15 +122,15 @@ jobs:
           git commit -m "Integrate SukiSU Ultra Built-in ($SUKISU_COMMIT)"
           cd ../..
 
-      - name: Integrate SUSFS Subsystem (${{ inputs.susfs_ref }})
+      - name: Integrate SUSFS Subsystem (${{ inputs.susfs_ref || 'gki-android16-6.12' }})
         run: |
           set -euo pipefail
           echo "=== [5/11] Integrating SUSFS Subsystem ==="
           cd kleaf_workspace/common
 
-          git clone --branch ${{ inputs.susfs_ref }} https://gitlab.com/shoey63/susfs4ksu susfs_source
+          git clone --branch ${{ inputs.susfs_ref || 'gki-android16-6.12' }} https://gitlab.com/shoey63/susfs4ksu susfs_source
           cd susfs_source
-          git checkout ${{ inputs.susfs_commit }} || true
+          git checkout ${{ inputs.susfs_commit || 'c8f64e41e3dea2cd44754d7472d3cd0bc0b40784' }} || true
           SUSFS_COMMIT=$(git rev-parse HEAD)
           echo "SUSFS_COMMIT=$SUSFS_COMMIT" >> $GITHUB_ENV
           cd ..
@@ -156,35 +161,35 @@ jobs:
 
           mkdir -p arch/arm64/configs
           cat << 'EOF' > arch/arm64/configs/sukisu_susfs.fragment
-CONFIG_KSU=y
-CONFIG_KPM=y
-CONFIG_KSU_SUSFS=y
-CONFIG_KSU_SUSFS_SUS_PATH=y
-CONFIG_KSU_SUSFS_SUS_MOUNT=y
-CONFIG_KSU_SUSFS_SUS_KSTAT=y
-CONFIG_KSU_SUSFS_SUS_MAP=y
-EOF
+          CONFIG_KSU=y
+          CONFIG_KPM=y
+          CONFIG_KSU_SUSFS=y
+          CONFIG_KSU_SUSFS_SUS_PATH=y
+          CONFIG_KSU_SUSFS_SUS_MOUNT=y
+          CONFIG_KSU_SUSFS_SUS_KSTAT=y
+          CONFIG_KSU_SUSFS_SUS_MAP=y
+          EOF
           cat arch/arm64/configs/sukisu_susfs.fragment
 
           echo "=== Registering Fragment into BUILD.bazel (check_defconfig=disabled) ==="
           python3 -c '
-with open("BUILD.bazel", "r") as f:
-    content = f.read()
-
-target = "common_kernel(\n    name = \"kernel_aarch64\","
-replacement = """common_kernel(
-    name = "kernel_aarch64",
-    check_defconfig = "disabled",
-    post_defconfig_fragments = ["arch/arm64/configs/sukisu_susfs.fragment"],"""
-
-if target in content:
-    content = content.replace(target, replacement, 1)
-    with open("BUILD.bazel", "w") as f:
-        f.write(content)
-    print("SUCCESS: Attached sukisu_susfs.fragment to kernel_aarch64 in BUILD.bazel")
-else:
-    raise RuntimeError("Target string not found in BUILD.bazel!")
-'
+          with open("BUILD.bazel", "r") as f:
+              content = f.read()
+          
+          target = "common_kernel(\n    name = \"kernel_aarch64\","
+          replacement = """common_kernel(
+              name = "kernel_aarch64",
+              check_defconfig = "disabled",
+              post_defconfig_fragments = ["arch/arm64/configs/sukisu_susfs.fragment"],"""
+          
+          if target in content:
+              content = content.replace(target, replacement, 1)
+              with open("BUILD.bazel", "w") as f:
+                  f.write(content)
+              print("SUCCESS: Attached sukisu_susfs.fragment to kernel_aarch64 in BUILD.bazel")
+          else:
+              raise RuntimeError("Target string not found in BUILD.bazel!")
+          '
           git add arch/arm64/configs/sukisu_susfs.fragment BUILD.bazel
           git commit -m "Register SukiSU & SUSFS defconfig fragment in Kleaf"
           cd ../..
@@ -285,10 +290,65 @@ else:
             echo "[Gate B] BOOT_REPACK_STRUCTURE=FAIL"
           fi
 
+      - name: Bundle Latest AlwaysStrong + ReZygisk Companion Modules
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          echo "=== [10/12] Resolving latest companion modules ==="
+          mkdir -p out/final/modules
+
+          AS_JSON=$(curl -fsSL --retry 3 \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/evoker0/AlwaysStrong/releases/latest)
+          AS_TAG=$(printf '%s' "$AS_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')
+          AS_NAME="AlwaysStrong-${AS_TAG}.zip"
+          AS_URL=$(printf '%s' "$AS_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); tag=d["tag_name"]; name=f"AlwaysStrong-{tag}.zip"; print(next(a["browser_download_url"] for a in d["assets"] if a["name"]==name))')
+          AS_DIGEST=$(printf '%s' "$AS_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); tag=d["tag_name"]; name=f"AlwaysStrong-{tag}.zip"; print(next((a.get("digest") or "") for a in d["assets"] if a["name"]==name))')
+          curl -fL --retry 3 "$AS_URL" -o "out/final/modules/$AS_NAME"
+          if [[ "$AS_DIGEST" == sha256:* ]]; then
+            echo "${AS_DIGEST#sha256:}  out/final/modules/$AS_NAME" | sha256sum -c -
+          fi
+          echo "ALWAYSSTRONG_VERSION=$AS_TAG" >> "$GITHUB_ENV"
+          echo "ALWAYSSTRONG_FILE=$AS_NAME" >> "$GITHUB_ENV"
+
+          RZ_JSON=$(curl -fsSL --retry 3 \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            https://api.github.com/repos/PerformanC/ReZygisk/releases/latest)
+          RZ_TAG=$(printf '%s' "$RZ_JSON" | python3 -c 'import json,sys; print(json.load(sys.stdin)["tag_name"])')
+          RZ_NAME=$(printf '%s' "$RZ_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(a["name"] for a in d["assets"] if a["name"].endswith("-release.zip")))')
+          RZ_URL=$(printf '%s' "$RZ_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(a["browser_download_url"] for a in d["assets"] if a["name"].endswith("-release.zip")))')
+          RZ_DIGEST=$(printf '%s' "$RZ_JSON" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next((a.get("digest") or "") for a in d["assets"] if a["name"].endswith("-release.zip")))')
+          curl -fL --retry 3 "$RZ_URL" -o "out/final/modules/$RZ_NAME"
+          if [[ "$RZ_DIGEST" == sha256:* ]]; then
+            echo "${RZ_DIGEST#sha256:}  out/final/modules/$RZ_NAME" | sha256sum -c -
+          fi
+          echo "REZYGISK_VERSION=$RZ_TAG" >> "$GITHUB_ENV"
+          echo "REZYGISK_FILE=$RZ_NAME" >> "$GITHUB_ENV"
+
+          cat > out/final/PLAY_INTEGRITY_RUNTIME.txt <<EOF
+          Songyuan V2 Play Integrity companion stack
+          ============================================
+          Kernel: SukiSU Ultra built-in + SUSFS + KPM
+          ReZygisk: $RZ_TAG ($RZ_NAME)
+          AlwaysStrong: $AS_TAG ($AS_NAME)
+          
+          Runtime refresh policy:
+          - keybox: AlwaysStrong fetches/validates and replaces it when newer content is available
+          - Pixel fingerprint and security-patch profile: refreshed by AlwaysStrong
+          - background interval: managed by AlwaysStrong (default documented upstream: hourly)
+          - certificate expiry: detected from the active runtime keybox; never hardcoded by this builder
+          
+          BASIC / DEVICE / STRONG verdicts must be measured on the booted phone.
+          A build artifact cannot guarantee a Play Integrity verdict or that a keybox remains unrevoked.
+          EOF
+
       - name: Generate Final Comprehensive Build Report & Package
         run: |
           set -euo pipefail
-          echo "=== [10/11] Generating Safety Reports & Metadata ==="
+          echo "=== [11/12] Generating Safety Reports & Metadata ==="
 
           # Determine final flashable status
           FLASHABLE_STATUS="NO"
@@ -311,72 +371,72 @@ else:
           IMAGE_SHA256=$(sha256sum out/final/Image | awk '{print $1}')
 
           cat << EOF > out/final/FINAL_BUILD_REPORT.txt
-======================================================================
-     REDMI K100 PRO MAX (songyuan) FINAL KERNEL BUILD REPORT
-======================================================================
-Device:                     Redmi K100 Pro Max (songyuan)
-Target ROM:                 OS3.0.301.0.WGNTWXM (Android 16 / HyperOS 3)
-Architecture:               arm64 (ARMv9-A)
-Page Size:                  4096 / 4K
-
-Kernel Source Baseline:     ${{ inputs.kernel_manifest_branch }}
-SOURCE COMMIT:              ${{ inputs.kernel_commit }}
-KMI VERSION:                android16-6
-KERNEL RELEASE:             $FINAL_RELEASE_STR
-ANDROID BUILD ID:           ${{ inputs.android_build_id }}
-
-Build Pipeline:             Official Google Kleaf (Bazel)
-Target:                     //common:kernel_aarch64_dist
-
-Root Framework:             SukiSU Ultra (BUILT-IN)
-SukiSU Commit:              $SUKISU_COMMIT
-Stealth Subsystem:          SUSFS (v1.5.x for GKI 6.12)
-SUSFS Commit:               $SUSFS_COMMIT
-KernelPatch Module:         KPM (CONFIG_KPM=y)
-
-----------------------------------------------------------------------
-INDEPENDENT VALIDATION GATES:
-----------------------------------------------------------------------
-Gate A (Kleaf Kernel & KMI):       ${KLEAF_KERNEL_COMPATIBILITY:-FAIL}
-Gate B (Boot Repack Structure):    ${BOOT_REPACK_STRUCTURE:-FAIL}
-
-OVERALL FLASHABLE VERDICT:         FLASHABLE=$FLASHABLE_STATUS
-----------------------------------------------------------------------
-Final Boot Image:           boot-sukisu-susfs-kpm-songyuan.img
-Partition Size Match:       $FINAL_BOOT_SIZE bytes (Exact 100,663,296 bytes)
-Boot Image SHA256:          $BOOT_SHA256
-Kernel Image SHA256:        $IMAGE_SHA256
-======================================================================
-EOF
+          ======================================================================
+               REDMI K100 PRO MAX (songyuan) FINAL KERNEL BUILD REPORT
+          ======================================================================
+          Device:                     Redmi K100 Pro Max (songyuan)
+          Target ROM:                 OS3.0.301.0.WGNTWXM (Android 16 / HyperOS 3)
+          Architecture:               arm64 (ARMv9-A)
+          Page Size:                  4096 / 4K
+          
+          Kernel Source Baseline:     ${{ inputs.kernel_manifest_branch || 'common-android16-6.12' }}
+          SOURCE COMMIT:              ${{ inputs.kernel_commit || '0d80ee00f747' }}
+          KMI VERSION:                android16-6
+          KERNEL RELEASE:             $FINAL_RELEASE_STR
+          ANDROID BUILD ID:           ${{ inputs.android_build_id || 'ab15461283' }}
+          
+          Build Pipeline:             Official Google Kleaf (Bazel)
+          Target:                     //common:kernel_aarch64_dist
+          
+          Root Framework:             SukiSU Ultra (BUILT-IN)
+          SukiSU Commit:              $SUKISU_COMMIT
+          Stealth Subsystem:          SUSFS (v1.5.x for GKI 6.12)
+          SUSFS Commit:               $SUSFS_COMMIT
+          KernelPatch Module:         KPM (CONFIG_KPM=y)
+          
+          ----------------------------------------------------------------------
+          INDEPENDENT VALIDATION GATES:
+          ----------------------------------------------------------------------
+          Gate A (Kleaf Kernel & KMI):       ${KLEAF_KERNEL_COMPATIBILITY:-FAIL}
+          Gate B (Boot Repack Structure):    ${BOOT_REPACK_STRUCTURE:-FAIL}
+          
+          OVERALL FLASHABLE VERDICT:         FLASHABLE=$FLASHABLE_STATUS
+          ----------------------------------------------------------------------
+          Final Boot Image:           boot-sukisu-susfs-kpm-songyuan.img
+          Partition Size Match:       $FINAL_BOOT_SIZE bytes (Exact 100,663,296 bytes)
+          Boot Image SHA256:          $BOOT_SHA256
+          Kernel Image SHA256:        $IMAGE_SHA256
+          ======================================================================
+          EOF
           cat out/final/FINAL_BUILD_REPORT.txt
 
           cat << EOF > out/final/BUILD_METADATA.json
-{
-  "device": "songyuan",
-  "rom": "OS3.0.301.0.WGNTWXM",
-  "source_commit": "${{ inputs.kernel_commit }}",
-  "kmi_version": "android16-6",
-  "kernel_release": "$FINAL_RELEASE_STR",
-  "android_build_id": "${{ inputs.android_build_id }}",
-  "page_size": 4096,
-  "sukisu_mode": "builtin",
-  "sukisu_commit": "$SUKISU_COMMIT",
-  "susfs_commit": "$SUSFS_COMMIT",
-  "kpm": true,
-  "gate_a": "${KLEAF_KERNEL_COMPATIBILITY:-FAIL}",
-  "gate_b": "${BOOT_REPACK_STRUCTURE:-FAIL}",
-  "flashable": $( [ "$FLASHABLE_STATUS" = "YES" ] && echo "true" || echo "false" )
-}
-EOF
+          {
+            "device": "songyuan",
+            "rom": "OS3.0.301.0.WGNTWXM",
+            "source_commit": "${{ inputs.kernel_commit || '0d80ee00f747' }}",
+            "kmi_version": "android16-6",
+            "kernel_release": "$FINAL_RELEASE_STR",
+            "android_build_id": "${{ inputs.android_build_id || 'ab15461283' }}",
+            "page_size": 4096,
+            "sukisu_mode": "builtin",
+            "sukisu_commit": "$SUKISU_COMMIT",
+            "susfs_commit": "$SUSFS_COMMIT",
+            "kpm": true,
+            "gate_a": "${KLEAF_KERNEL_COMPATIBILITY:-FAIL}",
+            "gate_b": "${BOOT_REPACK_STRUCTURE:-FAIL}",
+            "flashable": $( [ "$FLASHABLE_STATUS" = "YES" ] && echo "true" || echo "false" )
+          }
+          EOF
 
           cd out/final
-          sha256sum * > SHA256SUMS.txt 2>/dev/null || true
+          find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt
           cat SHA256SUMS.txt
 
       - name: Upload Final SukiSU Ultra Kernel Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: SukiSU-Ultra-songyuan-FINAL-KLEAF
+          name: Songyuan-V2-SukiSU-AlwaysStrong-KLEAF
           path: |
             out/final/
             out/dist/
