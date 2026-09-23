@@ -251,6 +251,15 @@ class BootRepacker:
         if not new_k_file.is_file():
             raise FileNotFoundError(f"New kernel file not found: {new_k_file}")
 
+        stock_avb = self._query_avb_info(self.stock_path.read_bytes())
+        stock_algorithm = stock_avb.get("Algorithm")
+        if stock_algorithm != "NONE":
+            raise RuntimeError(
+                "Stock boot uses signed OEM AVB (%s). The available test key cannot "
+                "produce an OEM-equivalent signature; refusing to label a repack "
+                "flashable without a verified AVB signing plan." % stock_algorithm
+            )
+
         out_path = Path(output_boot_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
         report_dir = Path(out_dir) if out_dir else out_path.parent

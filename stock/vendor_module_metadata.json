@@ -1,0 +1,17 @@
+{
+  "module_count": {
+    "vendor_dlkm": 398,
+    "system_dlkm": 206
+  },
+  "vermagic": {
+    "vendor_dlkm": {
+      "6.12.69-android16-6-maybe-dirty-4k SMP preempt mod_unload modversions aarch64": 398
+    },
+    "system_dlkm": {
+      "6.12.69-android16-6-g0d80ee00f747-ab15461283-4k SMP preempt mod_unload modversions aarch64": 206
+    }
+  },
+  "symbol_count": 3809,
+  "conflicting_symbols": [],
+  "module_dependency_mismatches": []
+}
