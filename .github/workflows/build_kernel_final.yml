@@ -234,6 +234,19 @@ jobs:
             exit 1
           fi
 
+          # Kleaf keeps these outputs under target-specific names in the dist.
+          # Normalize them only from the exact kernel_aarch64 build artifacts.
+          test -s "$GITHUB_WORKSPACE/out/dist/kernel_aarch64_Module.symvers" || {
+            echo "FATAL: Kleaf kernel_aarch64_Module.symvers missing from dist!"
+            exit 1
+          }
+          test -s "$GITHUB_WORKSPACE/out/dist/kernel_aarch64_dot_config" || {
+            echo "FATAL: Kleaf kernel_aarch64_dot_config missing from dist!"
+            exit 1
+          }
+          cp "$GITHUB_WORKSPACE/out/dist/kernel_aarch64_Module.symvers" "$GITHUB_WORKSPACE/out/dist/Module.symvers"
+          cp "$GITHUB_WORKSPACE/out/dist/kernel_aarch64_dot_config" "$GITHUB_WORKSPACE/out/dist/.config"
+
           if [ ! -f "$GITHUB_WORKSPACE/out/dist/Module.symvers" ]; then
             echo "FATAL: Module.symvers missing from dist directory!"
             exit 1
