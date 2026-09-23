@@ -278,6 +278,7 @@ jobs:
             echo "FATAL: stock/boot.img not found!"
             exit 1
           fi
+          (cd stock && sha256sum -c stock_boot_sha256.txt)
 
           python3 tools/boot_repacker.py \
             stock/boot.img \
@@ -313,6 +314,8 @@ jobs:
           cp out/dist/Module.symvers out/final/Module.symvers
           cp out/dist/System.map out/final/System.map 2>/dev/null || true
           cp stock/stock_boot_sha256.txt out/final/stock_boot_sha256.txt
+          cp stock/stock_config_sha256.txt out/final/stock_config_sha256.txt
+          cp stock/vendor_module_metadata.json out/final/vendor_module_metadata.json
           cp tools/restore_stock.bat out/final/restore_stock.bat
           cp tools/bshield_diagnostic.py out/final/bshield_diagnostic.py
           cp tools/play_integrity_diagnostic.py out/final/play_integrity_diagnostic.py
