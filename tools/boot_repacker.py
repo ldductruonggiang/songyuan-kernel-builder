@@ -21,6 +21,7 @@ import os
 import struct
 import hashlib
 import json
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -146,7 +147,13 @@ class BootRepacker:
         gki_sig_present = False
         gki_certs = []
 
-        if gki_sig_end <= total_len:
+        # OEM VBMeta is not part of the GKI signature region. A boot image
+        # without GKI signatures may place its OEM VBMeta at this exact offset.
+        oem_vbmeta_offset = total_len
+        if total_len == PARTITION_SIZE and data[-64:-60] == b"AVBf":
+            oem_vbmeta_offset = struct.unpack(">Q", data[-64 + 20:-64 + 28])[0]
+
+        if gki_sig_end <= oem_vbmeta_offset:
             gki_data = data[gki_sig_start:gki_sig_end]
             if gki_data.startswith(b"AVB0"):
                 gki_sig_present = True
@@ -238,7 +245,7 @@ class BootRepacker:
         new_kernel_path: str,
         output_boot_path: str,
         out_dir: str = None,
-        release_str: str = "6.12.69-android16-6-g0d80ee00f747-ab15461283-4k",
+        release_str: str = None,
     ) -> Dict[str, Any]:
         """
         Replaces stock kernel with new_kernel while strictly preserving:
@@ -250,6 +257,18 @@ class BootRepacker:
         new_k_file = Path(new_kernel_path)
         if not new_k_file.is_file():
             raise FileNotFoundError(f"New kernel file not found: {new_k_file}")
+        embedded = set(re.findall(rb"Linux version ([^\x00\s]+)", new_k_file.read_bytes()))
+        if len(embedded) != 1 or embedded.pop().decode("ascii") != release_str:
+            raise ValueError("Kernel release argument does not match the compiled Image")
+
+        stock_avb = self._query_avb_info(self.stock_path.read_bytes())
+        stock_algorithm = stock_avb.get("Algorithm")
+        if stock_algorithm != "NONE":
+            raise RuntimeError(
+                "Stock boot uses signed OEM AVB (%s). The available test key cannot "
+                "produce an OEM-equivalent signature; refusing to label a repack "
+                "flashable without a verified AVB signing plan." % stock_algorithm
+            )
 
         out_path = Path(output_boot_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -524,8 +543,8 @@ class BootRepacker:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python boot_repacker.py <stock_boot.img> <new_Image> [output_boot.img] [avbtool.py] [gki_key.pem] [out_dir]")
+    if len(sys.argv) < 8:
+        print("Usage: python boot_repacker.py <stock_boot.img> <new_Image> <output_boot.img> <avbtool.py> <gki_key.pem> <out_dir> <kernel_release>")
         sys.exit(1)
 
     stock_img = sys.argv[1]
@@ -534,9 +553,10 @@ if __name__ == "__main__":
     avb_tool = sys.argv[4] if len(sys.argv) > 4 else None
     gki_key = sys.argv[5] if len(sys.argv) > 5 else None
     out_dir = sys.argv[6] if len(sys.argv) > 6 else str(Path(out_img).parent)
+    release_str = sys.argv[7]
 
     repacker = BootRepacker(stock_img, avb_tool, gki_key)
-    res = repacker.repack(new_kernel, out_img, out_dir)
+    res = repacker.repack(new_kernel, out_img, out_dir, release_str)
 
     print(f"\n[BootRepacker] Repack finished. Status: {res['gate_b_status']}")
     if not res["success"]:

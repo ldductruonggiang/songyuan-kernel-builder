@@ -2,12 +2,13 @@
 """
 ABI & Symbol CRC Gate Validator for Redmi K100 Pro Max (songyuan)
 Compares Module.symvers against stock vendor_symbol_crc_reference.json
-Enforces fail-closed rules: FLASHABLE=YES only if all critical symbols match and release string matches.
+Enforces fail-closed ABI compatibility rules. Boot-image flashability is a separate AVB gate.
 """
 
 import sys
 import os
 import json
+import re
 from pathlib import Path
 from typing import Dict, Any, List
 
@@ -56,6 +57,7 @@ def validate(
     reference_json: str,
     kernel_release_str: str,
     output_report_file: str = "abi-report.txt",
+    module_metadata_file: str = None,
 ) -> Dict[str, Any]:
     symvers_path = Path(symvers_file)
     ref_path = Path(reference_json)
@@ -66,15 +68,25 @@ def validate(
 
     with open(ref_path, "r") as f:
         reference = json.load(f)
+    metadata = None
+    if module_metadata_file:
+        metadata = json.loads(Path(module_metadata_file).read_text(encoding="utf-8"))
+        if metadata.get("symbol_count") != len(reference):
+            raise ValueError("Module metadata symbol count does not match CRC reference")
+        counts = metadata.get("module_count", {})
+        if any(not counts.get(partition) for partition in
+               ("vendor_boot", "vendor_dlkm", "system_dlkm")):
+            raise ValueError("CRC reference lacks vendor_boot, vendor_dlkm, or system_dlkm modules")
+    invalid_reference = [
+        name for name, info in reference.items()
+        if not re.fullmatch(r"0x[0-9a-fA-F]{8}", str(info.get("crc", "")))
+    ]
 
     built_syms = parse_module_symvers(symvers_path)
     clean_release = kernel_release_str.strip()
 
-    # 1. Release & KMI check: must start with 6.12 and match KMI generation android16-6
-    # Stock baseline: 6.12.69-android16-6-g0d80ee00f747-ab15461283-4k
     has_dirty = "-dirty" in clean_release
-    kmi_ok = ("6.12" in clean_release) and ("android16-6" in clean_release) and ("0d80ee00f747" in clean_release or "g0d80ee" in clean_release or clean_release.startswith("6.12"))
-    release_match = kmi_ok and not has_dirty
+    release_match = clean_release == EXPECTED_RELEASE
 
     # 2. Symbol comparison
     matched = []
@@ -83,9 +95,9 @@ def validate(
     critical_failures = []
 
     for sym_name, info in reference.items():
-        expected_crc = info["crc"].lower()
+        expected_crc = str(info.get("crc", "")).lower()
         req_by = info.get("required_by", [])
-        is_critical = any(m in req_by for m in CRITICAL_MODULES)
+        is_critical = any(Path(module).name in CRITICAL_MODULES for module in req_by)
 
         if sym_name not in built_syms:
             missing.append((sym_name, req_by))
@@ -105,12 +117,18 @@ def validate(
     total_ref = len(reference)
     match_pct = (len(matched) / total_ref * 100) if total_ref > 0 else 0
 
-    # Determine flashable
-    flashable = (
+    # Determine ABI compatibility; this says nothing about boot-image AVB validity.
+    # A missing vendor symbol is an unknown ABI result, not evidence of compatibility.
+    abi_compatible = (
         release_match
         and not has_dirty
+        and total_ref > 0
+        and not invalid_reference
         and len(critical_failures) == 0
         and len(mismatched) == 0
+        and len(missing) == 0
+        and (metadata is None or not metadata.get("module_dependency_mismatches")
+             and not metadata.get("conflicting_symbols"))
     )
 
     report_lines = [
@@ -125,6 +143,11 @@ def validate(
         f"Dirty Flag Check:       {'FAIL (-dirty detected)' if has_dirty else 'PASS (clean)'}",
         "--------------------------------------------------",
         f"Total Reference Syms:   {total_ref}",
+        f"Invalid Reference CRCs: {len(invalid_reference)}",
+        f"Stock Vendor Modules:    {metadata['module_count']['vendor_dlkm'] if metadata else 'UNKNOWN'}",
+        f"Stock System Modules:    {metadata['module_count']['system_dlkm'] if metadata else 'UNKNOWN'}",
+        f"Stock Vendor Boot:       {metadata['module_count']['vendor_boot'] if metadata else 'UNKNOWN'}",
+        f"Module Dependencies:     {len(metadata['module_dependency_mismatches']) if metadata else 'UNKNOWN'} mismatches",
         f"Matched Symbols:        {len(matched)} ({match_pct:.2f}%)",
         f"Mismatched Symbols:     {len(mismatched)}",
         f"Missing Symbols:        {len(missing)}",
@@ -140,21 +163,34 @@ def validate(
             report_lines.append(f"  ... and {len(critical_failures) - 20} more.")
         report_lines.append("--------------------------------------------------")
 
+    if invalid_reference:
+        report_lines.append("[INVALID STOCK CRC REFERENCE]")
+        report_lines.extend(f"  * {name}" for name in invalid_reference[:10])
+        report_lines.append("--------------------------------------------------")
+
+    if metadata:
+        report_lines.append("[STOCK MODULE VERMAGIC]")
+        for partition, variants in metadata.get("vermagic", {}).items():
+            for magic, count in variants.items():
+                report_lines.append(f"  * {partition}: {count} modules, {magic}")
+        report_lines.append("--------------------------------------------------")
+
     if mismatched:
         report_lines.append("[TOP MISMATCHES]")
         for sym, exp, act, mod in mismatched[:10]:
             report_lines.append(f"  * {sym}: expected {exp}, got {act} (used by {mod[:2]})")
         report_lines.append("--------------------------------------------------")
 
-    verdict = "YES" if flashable else "NO"
-    report_lines.append(f"FINAL ABI STATUS: FLASHABLE={verdict}")
+    verdict = "YES" if abi_compatible else "NO"
+    report_lines.append(f"FINAL ABI STATUS: ABI_COMPATIBLE={verdict}")
+    report_lines.append("FLASHABLE=NO (kernel-only ABI audit; boot AVB gate not evaluated here)")
     report_lines.append("==================================================")
 
     out_path.write_text("\n".join(report_lines), encoding="utf-8")
     print("\n".join(report_lines))
 
     return {
-        "flashable": flashable,
+        "abi_compatible": abi_compatible,
         "release_match": release_match,
         "dirty": has_dirty,
         "total_ref": total_ref,
@@ -162,22 +198,24 @@ def validate(
         "mismatched": len(mismatched),
         "missing": len(missing),
         "critical_errors": len(critical_failures),
+        "invalid_reference": len(invalid_reference),
     }
 
 
 if __name__ == "__main__":
     if len(sys.argv) < 4:
-        print("Usage: python abi_crc_validator.py <Module.symvers> <vendor_reference.json> <kernel_release_str> [output_report.txt]")
+        print("Usage: python abi_crc_validator.py <Module.symvers> <vendor_reference.json> <kernel_release_str> [output_report.txt] [module_metadata.json]")
         sys.exit(1)
 
     symvers = sys.argv[1]
     ref_json = sys.argv[2]
     rel_str = sys.argv[3]
     out_rep = sys.argv[4] if len(sys.argv) > 4 else "abi-report.txt"
+    metadata_file = sys.argv[5] if len(sys.argv) > 5 else None
 
-    res = validate(symvers, ref_json, rel_str, out_rep)
-    if not res["flashable"]:
-        print("[WARNING] ABI Gate check did not achieve FLASHABLE=YES!")
+    res = validate(symvers, ref_json, rel_str, out_rep, metadata_file)
+    if not res["abi_compatible"]:
+        print("[WARNING] ABI Gate check did not achieve ABI_COMPATIBLE=YES!")
         sys.exit(2)
     else:
-        print("[SUCCESS] ABI Gate passed! FLASHABLE=YES")
+        print("[SUCCESS] ABI Gate passed! ABI_COMPATIBLE=YES; boot AVB gate remains separate")
