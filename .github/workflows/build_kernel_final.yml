@@ -14,7 +14,7 @@ on:
       kernel_commit:
         description: "Exact Stock ACK Baseline Commit"
         required: true
-        default: "0d80ee00f747"
+        default: "0d80ee00f7471317740f9843ca78ae96409377ee"
       sukisu_ref:
         description: "SukiSU Pinned Commit (Built-in)"
         required: true
@@ -85,7 +85,13 @@ jobs:
 
           cd common
           echo "=== Checking out exact ACK commit: ${{ inputs.kernel_commit }} ==="
-          git fetch origin ${{ inputs.kernel_commit }} --depth=1
+          # repo names the manifest remote 'aosp', not 'origin'.
+          AOSP_REMOTE_URL=$(git remote get-url aosp)
+          [[ "$AOSP_REMOTE_URL" =~ ^https://android\.googlesource\.com/kernel/common/?$ ]] || {
+            echo "FATAL: unexpected common kernel remote: $AOSP_REMOTE_URL"
+            exit 1
+          }
+          git fetch aosp ${{ inputs.kernel_commit }} --depth=1
           git checkout ${{ inputs.kernel_commit }}
           CURRENT_COMMIT=$(git rev-parse HEAD)
           echo "Checked out commit: $CURRENT_COMMIT"
