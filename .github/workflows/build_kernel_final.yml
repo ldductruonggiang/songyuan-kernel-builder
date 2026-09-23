@@ -112,10 +112,9 @@ jobs:
           git checkout ${{ inputs.sukisu_ref }}
           SUKISU_COMMIT=$(git rev-parse HEAD)
           test "$SUKISU_COMMIT" = "${{ inputs.sukisu_ref }}"
-          if [ "$SUKISU_COMMIT" = "b20dee702035af09cb2ecb5f35443bbc1747f3e6" ]; then
-            echo "::error::Pinned SukiSU builtin commit does not compile against ACK 6.12: netlink_kernel_cfg.cb_mutex and security_add_hooks API differ. Await an official upstream fix; see https://github.com/SukiSU-Ultra/SukiSU-Ultra/issues/921"
-            exit 1
-          fi
+          # Match the two ACK 6.12 API changes reported by the prior compile.
+          git apply --check "$GITHUB_WORKSPACE/patches/sukisu-ack-6.12-api.patch"
+          git apply "$GITHUB_WORKSPACE/patches/sukisu-ack-6.12-api.patch"
           echo "SUKISU_COMMIT=$SUKISU_COMMIT" >> $GITHUB_ENV
           rm -rf .git
           cd ..
@@ -154,10 +153,10 @@ jobs:
           cp -r susfs_source/kernel_patches/fs/* fs/
           cp -r susfs_source/kernel_patches/include/* include/
 
-          echo "Applying SUSFS patch to KernelSU driver..."
+          echo "Checking SukiSU's built-in SUSFS support..."
           cd KernelSU
-          git apply --check ../susfs_source/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
-          git apply ../susfs_source/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
+          grep -q '^config KSU_SUSFS$' kernel/Kconfig
+          grep -q 'SUSFS_INLINE_HOOK' kernel/Makefile
           cd ..
           rm -rf drivers/kernelsu
           cp -r KernelSU/kernel drivers/kernelsu

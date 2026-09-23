@@ -1,0 +1,40 @@
+diff --git a/kernel/hook/lsm_hook.c b/kernel/hook/lsm_hook.c
+index 0c303ba..e2deea9 100644
+--- a/kernel/hook/lsm_hook.c
++++ b/kernel/hook/lsm_hook.c
+@@ -185,9 +185,18 @@ static struct security_hook_list ksu_hooks[] = {
+ #endif
+ };
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)
++static const struct lsm_id ksu_lsmid = {
++    .name = "ksu",
++    .id = LSM_ID_UNDEF,
++};
++#endif
++
+ void __init ksu_lsm_hook_init(void)
+ {
+-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0)
++    security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks), &ksu_lsmid);
++#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 11, 0)
+     security_add_hooks(ksu_hooks, ARRAY_SIZE(ksu_hooks), "ksu");
+ #else
+     // https://elixir.bootlin.com/linux/v4.10.17/source/include/linux/lsm_hooks.h#L1892
+diff --git a/kernel/kpm/super_access.c b/kernel/kpm/super_access.c
+index b95292d..d4a751a 100644
+--- a/kernel/kpm/super_access.c
++++ b/kernel/kpm/super_access.c
+@@ -129,7 +129,11 @@ DYNAMIC_STRUCT_BEGIN(netlink_kernel_cfg)
+ DEFINE_MEMBER(netlink_kernel_cfg, groups)
+ DEFINE_MEMBER(netlink_kernel_cfg, flags)
+ DEFINE_MEMBER(netlink_kernel_cfg, input)
++#if LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0)
+ DEFINE_MEMBER(netlink_kernel_cfg, cb_mutex)
++#else
++DEFINE_MEMBER(netlink_kernel_cfg, release)
++#endif
+ DEFINE_MEMBER(netlink_kernel_cfg, bind)
+ DEFINE_MEMBER(netlink_kernel_cfg, unbind)
+ #if LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0)
