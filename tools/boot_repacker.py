@@ -147,7 +147,13 @@ class BootRepacker:
         gki_sig_present = False
         gki_certs = []
 
-        if gki_sig_end <= total_len:
+        # OEM VBMeta is not part of the GKI signature region. A boot image
+        # without GKI signatures may place its OEM VBMeta at this exact offset.
+        oem_vbmeta_offset = total_len
+        if total_len == PARTITION_SIZE and data[-64:-60] == b"AVBf":
+            oem_vbmeta_offset = struct.unpack(">Q", data[-64 + 20:-64 + 28])[0]
+
+        if gki_sig_end <= oem_vbmeta_offset:
             gki_data = data[gki_sig_start:gki_sig_end]
             if gki_data.startswith(b"AVB0"):
                 gki_sig_present = True
