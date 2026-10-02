@@ -28,3 +28,5 @@ Workflow GitHub Actions của branch này sẽ tạo APK debug có thể cài tr
 
 ## Quyền riêng tư
 Source code hoàn toàn local. Không có mã gửi dữ liệu ra Internet.
+
+Build verification: GitHub Actions workflow `Build FCM Reconnect APK`.
