@@ -6,6 +6,11 @@ on:
     paths:
       - 'FCMReconnect/**'
       - '.github/workflows/fcm-reconnect-build.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'FCMReconnect/**'
+      - '.github/workflows/fcm-reconnect-build.yml'
   workflow_dispatch:
 
 jobs:
