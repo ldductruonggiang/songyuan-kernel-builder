@@ -6,12 +6,10 @@ on:
     paths:
       - 'FCMReconnect/**'
       - '.github/workflows/fcm-reconnect-build.yml'
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'FCMReconnect/**'
-      - '.github/workflows/fcm-reconnect-build.yml'
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -21,6 +19,8 @@ jobs:
         working-directory: FCMReconnect
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: fcm-reconnect-app
 
       - uses: actions/setup-java@v4
         with:
@@ -38,6 +38,20 @@ jobs:
 
       - name: Build debug APK
         run: gradle :app:assembleDebug
+
+      - name: Keep APK in branch
+        run: |
+          mkdir -p releases
+          cp app/build/outputs/apk/debug/app-debug.apk releases/FCM-Reconnect-v1.0.0-debug.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add releases/FCM-Reconnect-v1.0.0-debug.apk
+          if git diff --cached --quiet; then
+            echo "APK unchanged"
+          else
+            git commit -m "Build FCM Reconnect APK [skip-fcm-build]"
+            git push origin HEAD:fcm-reconnect-app
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
