@@ -31,7 +31,7 @@ jobs:
           grep -RIl 'com.reed.fcmguard' app build.gradle settings.gradle 2>/dev/null |             xargs -r sed -i 's/com\.reed\.fcmguard/com.jiangli.fcmguard/g'
 
           # Keep the upstream layout validator in sync with the new package.
-          sed -i 's/com\\.reed\\.fcmguard/com.jiangli.fcmguard/g' tools/check_layout_profiles.py
+          python3 -c 'from pathlib import Path; p=Path("tools/check_layout_profiles.py"); s=p.read_text(); p.write_text(s.replace("com.reed.fcmguard","com.jiangli.fcmguard"))'
 
           # Move Java sources to the new package path.
           mkdir -p app/src/main/java/com/jiangli
