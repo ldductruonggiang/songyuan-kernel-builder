@@ -30,6 +30,9 @@ jobs:
           # Change namespace/application package references.
           grep -RIl 'com.reed.fcmguard' app build.gradle settings.gradle 2>/dev/null |             xargs -r sed -i 's/com\.reed\.fcmguard/com.jiangli.fcmguard/g'
 
+          # Keep the upstream layout validator in sync with the new package.
+          sed -i 's/com\\.reed\\.fcmguard/com.jiangli.fcmguard/g' tools/check_layout_profiles.py
+
           # Move Java sources to the new package path.
           mkdir -p app/src/main/java/com/jiangli
           mv app/src/main/java/com/reed/fcmguard app/src/main/java/com/jiangli/fcmguard
