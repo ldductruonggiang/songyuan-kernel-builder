@@ -1,0 +1,124 @@
+name: Build JiangLi FCM Guard
+
+on:
+  push:
+    branches: [ 'fcmguard-jl-v1.5.9' ]
+    paths:
+      - '.github/workflows/fcmguard-jl-build.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout builder branch
+        uses: actions/checkout@v4
+
+      - name: Fetch upstream v1.5.9
+        run: |
+          git clone --depth 1 --branch v1.5.9 https://github.com/ReedGAOOO/FCMGuard-HyperOS.git fcmguard-jl
+
+      - name: Rebrand as JiangLi
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd fcmguard-jl
+
+          # Change namespace/application package references.
+          grep -RIl 'com.reed.fcmguard' app build.gradle settings.gradle 2>/dev/null |             xargs -r sed -i 's/com\.reed\.fcmguard/com.jiangli.fcmguard/g'
+
+          # Move Java sources to the new package path.
+          mkdir -p app/src/main/java/com/jiangli
+          mv app/src/main/java/com/reed/fcmguard app/src/main/java/com/jiangli/fcmguard
+          rmdir app/src/main/java/com/reed || true
+
+          # Personal version identity.
+          sed -i 's/versionCode 28/versionCode 15901/' app/build.gradle
+          sed -i 's/versionName "1.5.9"/versionName "1.5.9-jl1"/' app/build.gradle
+          sed -i 's/rootProject.name = "FCMGuard"/rootProject.name = "JiangLiFCMGuard"/' settings.gradle
+
+          # App label in every locale without changing feature translations.
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          for p in Path("app/src/main/res").glob("values*/strings.xml"):
+              s = p.read_text(encoding="utf-8")
+              s = re.sub(r'<string name="app_name">.*?</string>',
+                         '<string name="app_name">JiangLi FCM Guard</string>',
+                         s, count=1)
+              p.write_text(s, encoding="utf-8")
+          PY
+
+          cat > PERSONAL_BUILD.md <<'EOF'
+          # JiangLi FCM Guard
+          Personal build based on ReedGAOOO/FCMGuard-HyperOS v1.5.9.
+          Identity changes only:
+          - App name: JiangLi FCM Guard
+          - Package: com.jiangli.fcmguard
+          - Version: 1.5.9-jl1
+          Core FCM/HyperOS logic is intentionally unchanged.
+          Upstream MIT license and attribution are preserved.
+          EOF
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Restore JiangLi signing key
+        uses: actions/cache@v4
+        with:
+          path: fcmguard-jl/ci-signing
+          key: jiangli-fcmguard-ci-signing-v1
+
+      - name: Create signing key if missing
+        shell: bash
+        run: |
+          mkdir -p fcmguard-jl/ci-signing
+          if [ ! -f fcmguard-jl/ci-signing/fcmguard-debug.keystore ]; then
+            keytool -genkeypair               -keystore fcmguard-jl/ci-signing/fcmguard-debug.keystore               -storepass android               -keypass android               -alias fcmguarddebug               -keyalg RSA               -keysize 2048               -validity 10000               -dname "CN=JiangLi FCM Guard,O=JiangLi,C=TW"
+          fi
+
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Check responsive layouts
+        working-directory: fcmguard-jl
+        run: python3 tools/check_layout_profiles.py
+
+      - name: Build APK
+        working-directory: fcmguard-jl
+        run: gradle :app:assembleDebug --stacktrace
+
+      - name: Prepare artifacts
+        shell: bash
+        run: |
+          cp fcmguard-jl/app/build/outputs/apk/debug/app-debug.apk JiangLi-FCMGuard-v1.5.9-jl1.apk
+          (cd fcmguard-jl && zip -qr ../JiangLi-FCMGuard-source-v1.5.9-jl1.zip . -x '.git/*' 'app/build/*' '.gradle/*')
+          sha256sum JiangLi-FCMGuard-v1.5.9-jl1.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: JiangLi-FCMGuard-v1.5.9-jl1
+          path: JiangLi-FCMGuard-v1.5.9-jl1.apk
+          retention-days: 30
+
+      - name: Upload source snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: JiangLi-FCMGuard-source-v1.5.9-jl1
+          path: JiangLi-FCMGuard-source-v1.5.9-jl1.zip
+          retention-days: 30
